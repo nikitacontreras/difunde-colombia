@@ -1,0 +1,27 @@
+# Go
+/bin/
+*.exe
+*.test
+*.out
+vendor/
+
+# Entorno
+.env
+*.local
+
+# Datos descargados (el scraper los regenera)
+data/raw/
+data/normalized/
+data/source_index.csv
+data/manifest.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/

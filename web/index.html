@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d">
+<title>Colombia Difunde</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<main>
+  <h1>Colombia Difunde</h1>
+  <p class="lead">Ayúdanos a mapear el estado real de la red móvil compartiendo tu conectividad.</p>
+  <p class="note">No registramos tu IP. Solo recopilamos tu ubicación aproximada y latencia de red.</p>
+
+  <button id="share" type="button">COMPARTIR UBICACIÓN</button>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <div id="followup" class="followup hidden">
+    <p id="opdet" class="hidden">Operador detectado: <span style="color: var(--accent-yellow);"></span></p>
+    <p>¿TIENES SEÑAL PARA REALIZAR LLAMADAS?</p>
+    <div class="row">
+      <button type="button" data-call="yes">SÍ</button>
+      <button type="button" data-call="no">NO</button>
+      <button type="button" data-call="unknown">NO SÉ</button>
+    </div>
+  </div>
+
+  <div id="report-panel" class="report-box hidden">
+    <h2>Reportar Ayuda o Incidente</h2>
+    <p class="note" style="margin: 0; color: var(--text-secondary);">La ubicación actual se usará para registrar el punto.</p>
+    <form id="report-form">
+      <label>Tipo de recurso
+        <select id="rep-kind" required>
+          <option value="centro_acopio">Centro de Acopio</option>
+          <option value="hospital">Punto de Salud / Hospital</option>
+          <option value="refugio">Refugio / Albergue</option>
+          <option value="agua">Distribución de Agua</option>
+          <option value="energia">Punto de Energía</option>
+          <option value="internet">Punto de Acceso Internet</option>
+          <option value="via_bloqueada">Vía Bloqueada</option>
+          <option value="afectacion_estructural">Afectación Estructural</option>
+        </select>
+      </label>
+      <label>Nombre / Título
+        <input type="text" id="rep-name" placeholder="Ej. Polideportivo San Pedro" required>
+      </label>
+      <label>Dirección / Descripción ubicación
+        <input type="text" id="rep-address" placeholder="Ej. Calle 5 # 12-30" required>
+      </label>
+      <label>Teléfono contacto (opcional)
+        <input type="tel" id="rep-phone" placeholder="Ej. 3001234567">
+      </label>
+      <button type="submit" id="rep-submit">ENVIAR REPORTE</button>
+    </form>
+  </div>
+
+  <p class="foot"><a href="/map">Ver mapa de conectividad y ayudas →</a></p>
+</main>
+<script src="/app.js" defer></script>
+</body>
+</html>

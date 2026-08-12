@@ -1,0 +1,4 @@
+certifi
+# Optional if you want XLSX -> CSV normalization in the scraper:
+# pandas
+# openpyxl

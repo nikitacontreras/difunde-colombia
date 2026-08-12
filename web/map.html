@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0b0d">
+<title>Monitor Nacional · Colombia Difunde</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary: #0a0b0d;
+  --bg-secondary: #121318;
+  --bg-card: #1a1c23;
+  --accent-color: #2563eb;
+  --accent-red: #dc2626;
+  --accent-green: #16a34a;
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --border-color: #262930;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: 'Outfit', system-ui, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+#header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  z-index: 1002;
+  box-sizing: border-box;
+}
+
+#header h1 {
+  font-size: 19px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#header h1 span {
+  color: #fbbf24;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(251, 191, 36, 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+}
+
+#header .subtitle {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.5px;
+  margin-top: 3px;
+}
+
+#header .status-indicator {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Layout */
+#sidebar {
+  position: absolute;
+  top: 64px;
+  bottom: 0;
+  left: 0;
+  width: 380px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  z-index: 1001;
+  box-shadow: 10px 0 30px rgba(0,0,0,0.3);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+#map {
+  position: absolute;
+  top: 64px;
+  bottom: 0;
+  left: 380px;
+  right: 0;
+  z-index: 1;
+}
+
+/* Actions */
+.sidebar-actions {
+  padding: 16px;
+  display: flex;
+  gap: 12px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.btn-add-point {
+  flex: 1;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-add-point:hover {
+  background: #1d4ed8;
+  transform: translateY(-1px);
+}
+
+.btn-options {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: white;
+  border-radius: 8px;
+  width: 46px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-options:hover {
+  background: #252836;
+}
+
+/* Tabs */
+.tab-container {
+  display: flex;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-color);
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: 8px 12px;
+  gap: 8px;
+}
+
+.tab-container::-webkit-scrollbar {
+  display: none;
+}
+
+.tab-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 20px;
+  transition: all 0.2s ease;
+  display: inline-block;
+  flex: none;
+}
+
+.tab-btn.active {
+  color: white;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+}
+
+.tab-btn span {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 4px;
+  color: var(--text-primary);
+}
+
+/* Search */
+.search-container {
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: white;
+  font-family: inherit;
+  font-size: 13px;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+/* List */
+.report-list {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+}
+
+.report-item {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.report-item:hover {
+  background: var(--bg-card);
+}
+
+.report-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.report-item-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: white;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.report-item-time {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.3px;
+}
+
+.badge-urgent {
+  background: rgba(220, 38, 38, 0.15);
+  color: #fca5a5;
+  border: 1px solid rgba(220, 38, 38, 0.3);
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fde047;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-info {
+  background: rgba(37, 99, 235, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(37, 99, 235, 0.3);
+}
+
+.badge-distance {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.report-item-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Detail Drawer Panel */
+#detail-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-secondary);
+  z-index: 1010;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#detail-panel.open {
+  transform: translateX(0);
+}
+
+.detail-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.btn-back {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.detail-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.detail-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 6px;
+}
+
+/* Counters Row */
+.counter-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: transparent;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--border-color);
+  margin-bottom: 8px;
+}
+
+.counter-label {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.counter-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-counter {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-counter:hover {
+  background: #252836;
+}
+
+/* Needs Section */
+.needs-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.need-tag {
+  background: #1c1c1e;
+  border: 1px solid #2c2c2e;
+  color: white;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.need-remove {
+  cursor: pointer;
+  color: #9ca3af;
+  font-weight: bold;
+}
+
+.need-input-container {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* Action Buttons */
+.action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.btn-action-white {
+  background: #ffffff !important;
+  color: #1f2937 !important;
+  border: 1px solid #d1d5db !important;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: center;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-action-white:hover {
+  background: #f9fafb !important;
+}
+
+.btn-status-confirm {
+  background: #c62828 !important;
+  color: white !important;
+  border: none;
+  font-weight: 600;
+  padding: 12px;
+  width: 100%;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.btn-status-confirm:hover {
+  background: #b71c1c !important;
+}
+
+.btn-incorrect {
+  background: #ffffff !important;
+  color: #dc2626 !important;
+  border: 1px solid #fca5a5 !important;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+}
+
+.btn-incorrect:hover {
+  background: #fef2f2 !important;
+}
+
+/* Add Point Modal Overlay */
+#add-point-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.8) !important;
+  z-index: 999999 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+#add-point-modal.open {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+.modal-content {
+  background-color: #121318 !important;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 440px;
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+  box-sizing: border-box;
+  z-index: 1000000 !important;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.form-group input, .form-group select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: white;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* Map overlay indicator for Add point */
+#map-pick-indicator {
+  position: absolute;
+  top: 84px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent-color);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 30px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 1000;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  display: none;
+  pointer-events: none;
+}
+
+/* Connectivity Option Panel Drawer */
+#connectivity-drawer {
+  position: absolute;
+  top: 64px;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  background: var(--bg-primary);
+  border-left: 1px solid var(--border-color);
+  z-index: 1002;
+  transform: translateX(100%);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -10px 0 30px rgba(0,0,0,0.3);
+  box-sizing: border-box;
+}
+
+#connectivity-drawer.open {
+  transform: translateX(0);
+}
+
+/* Toast */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  z-index: 10005;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: #fbbf24;
+  border-radius: 8px;
+  padding: 12px 18px;
+  font-size: 13px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+  display: none;
+}
+
+.marker-pin-custom {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 11px;
+  color: white;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.4);
+}
+
+@media(max-width: 768px) {
+  #sidebar {
+    width: 100%;
+    height: 350px;
+    top: auto;
+    bottom: 0;
+    border-right: none;
+    border-top: 1px solid var(--border-color);
+  }
+  #map {
+    top: 64px;
+    bottom: 350px;
+    left: 0;
+    right: 0;
+  }
+}
+</style>
+</head>
+<body>
+
+<div id="app-container">
+  <div id="header">
+    <div>
+      <h1>Colombia Difunde <span>Nacional</span></h1>
+      <div class="subtitle">Monitoreo de Conectividad y Ayuda Humanitaria</div>
+    </div>
+    <div class="status-indicator" style="color: #fbbf24;">
+      <span id="header-active-count">0</span> reportes activos
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="sidebar">
+      <div class="sidebar-actions">
+        <button class="btn-add-point" id="btn-trigger-add">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+          REPORTAR AYUDA
+        </button>
+        <button class="btn-options" id="btn-toggle-connectivity" title="Filtros de Conectividad">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h.01M8 16a5 5 0 018 0M5 12a9 9 0 0114 0M2 8a13 13 0 0120 0"/></svg>
+        </button>
+      </div>
+
+      <div class="tab-container">
+        <button class="tab-btn active" data-tab="all">TODO <span id="count-all">0</span></button>
+        <button class="tab-btn" data-tab="acopios">ACOPIOS <span id="count-acopios">0</span></button>
+        <button class="tab-btn" data-tab="necesidades">NECESIDADES <span id="count-necesidades">0</span></button>
+        <button class="tab-btn" data-tab="ollas">OLLAS <span id="count-ollas">0</span></button>
+        <button class="tab-btn" data-tab="refugios">REFUGIOS <span id="count-refugios">0</span></button>
+      </div>
+
+      <div class="search-container">
+        <input type="text" class="search-input" id="search-box" placeholder="Buscar dirección, barrio o necesidad...">
+      </div>
+
+      <!-- Connectivity Test Card -->
+      <div id="connectivity-test-card" style="padding: 14px 16px; background: rgba(37, 99, 235, 0.08); border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:12px; font-weight:600; color:var(--text-primary);">Medir calidad de conexión</span>
+          <span style="display:none;">COMPARTIR UBICACIÓN</span>
+          <button id="btn-close-test-card" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:16px; padding:0 4px;">×</button>
+        </div>
+        <p style="font-size:11px; color:var(--text-secondary); margin:0; line-height:1.4;">Mide tu latencia y reporta tu señal móvil con la comunidad.</p>
+        <button id="btn-run-test" style="background:var(--accent-color); border:none; color:white; font-size:11px; font-weight:600; padding:8px 12px; border-radius:6px; cursor:pointer; transition: background 0.2s;">MEDIR RED</button>
+        
+        <div id="test-status" style="font-size:11px; display:none; color:#fbbf24; margin-top:2px;"></div>
+        
+        <div id="test-followup" style="display:none; flex-direction:column; gap:8px; margin-top:4px;">
+          <span style="font-size:11px; font-weight:600; color:var(--text-primary);">¿Tienes señal para llamadas?</span>
+          <div style="display:flex; gap:6px;">
+            <button class="btn-test-call" data-val="yes" style="flex:1; background:var(--bg-card); border:1px solid var(--border-color); color:white; font-size:11px; padding:6px; border-radius:4px; cursor:pointer;">SÍ</button>
+            <button class="btn-test-call" data-val="no" style="flex:1; background:var(--bg-card); border:1px solid var(--border-color); color:white; font-size:11px; padding:6px; border-radius:4px; cursor:pointer;">NO</button>
+            <button class="btn-test-call" data-val="unknown" style="flex:1; background:var(--bg-card); border:1px solid var(--border-color); color:white; font-size:11px; padding:6px; border-radius:4px; cursor:pointer;">NO SÉ</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="report-list" id="report-items-container">
+        <!-- Dynamic items -->
+      </div>
+
+      <!-- Detail View Overlay Panel inside Sidebar -->
+      <div id="detail-panel">
+        <div class="detail-header">
+          <button class="btn-back" id="btn-detail-back">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <h2 class="detail-title" id="detail-card-title">Detalles</h2>
+        </div>
+        <div class="detail-content">
+          <div>
+            <div class="detail-section-title">Estado</div>
+            <div class="badge-row" id="detail-card-badges"></div>
+            <p id="detail-card-desc" style="font-size: 13.5px; color: var(--text-secondary); margin-top: 10px; line-height: 1.5;"></p>
+            <div style="font-size: 12.5px; color: var(--text-secondary); font-weight: 500;" id="detail-card-votes">0 confirman · 0 desmienten</div>
+          </div>
+
+          <div>
+            <div class="detail-section-title">Gente en el punto</div>
+            <div class="counter-row">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span class="counter-val" id="val-helping" style="font-size:24px; font-weight:700; color:#3b82f6;">0</span>
+                <span class="counter-label">personas ayudando ahora</span>
+              </div>
+              <div class="counter-controls">
+                <button class="btn-counter" data-counter="helping" data-action="dec">-</button>
+                <button class="btn-counter" data-counter="helping" data-action="inc">+</button>
+              </div>
+            </div>
+            <div class="counter-row">
+              <div style="display:flex; align-items:center; gap:12px;">
+                <span class="counter-val" id="val-needed" style="font-size:24px; font-weight:700; color:#ef4444;">0</span>
+                <span class="counter-label">manos que todavía faltan</span>
+              </div>
+              <div class="counter-controls">
+                <button class="btn-counter" data-counter="needed" data-action="dec">-</button>
+                <button class="btn-counter" data-counter="needed" data-action="inc">+</button>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="detail-section-title">Qué se necesita</div>
+            <div class="needs-container" id="detail-card-needs"></div>
+            <div class="need-input-container">
+              <input type="text" id="new-need-input" placeholder="Añadir necesidad..." style="flex:1; background:var(--bg-card); border:1px solid var(--border-color); color:white; border-radius:6px; padding:8px; font-family:inherit; font-size:12px;">
+              <button id="btn-add-need" style="background:var(--accent-color); border:none; color:white; font-weight:bold; border-radius:6px; padding:0 14px; cursor:pointer; font-size:14px;">+</button>
+            </div>
+          </div>
+
+          <div>
+            <button class="btn-status-confirm" id="btn-vote-confirm">✓ Sigo aquí, esto está vigente</button>
+            <div class="action-grid">
+              <a href="#" class="btn-action-white" id="btn-gmaps" target="_blank">▲ Google Maps</a>
+              <button class="btn-action-white" id="btn-share">Compartir</button>
+            </div>
+            <div class="action-grid">
+              <button class="btn-action-white" id="btn-add-media" onclick="alert('Funcionalidad próximamente disponible')">+ Foto o vídeo</button>
+              <button class="btn-action-white" id="btn-edit-point" onclick="alert('Funcionalidad próximamente disponible')">Editar</button>
+            </div>
+            <button class="btn-incorrect" id="btn-vote-disprove">× Esta información no es correcta</button>
+          </div>
+
+          <!-- ADMIN_PANEL_PLACEHOLDER -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Map Picking Mode Info Indicator -->
+    <div id="map-pick-indicator">Haz click en el mapa para ubicar el reporte</div>
+
+    <div id="map"></div>
+
+    <!-- Connectivity Drawer -->
+    <div id="connectivity-drawer">
+      <div class="drawer-header">
+        <h3 style="margin:0; font-size:15px;">Conectividad observada</h3>
+        <button id="btn-close-connectivity" style="background:none; border:none; color:white; font-size:18px; cursor:pointer;">×</button>
+      </div>
+      <div class="drawer-content">
+        <div style="background:#1c1c21; border-radius:8px; padding:12px; font-size:12px; display:flex; flex-direction:column; gap:10px;">
+          <label style="display:block;">Operador 
+            <select id="op" style="margin-top:4px; width:100%; background:var(--bg-card); border:1px solid var(--border-color); color:white; padding:6px; border-radius:4px; font-family:inherit;">
+              <option value="">Todos</option>
+              <option>Claro</option>
+              <option>Movistar</option>
+              <option>Tigo</option>
+              <option>WOM</option>
+            </select>
+          </label>
+          <label style="display:block;">Ventana 
+            <select id="win" style="margin-top:4px; width:100%; background:var(--bg-card); border:1px solid var(--border-color); color:white; padding:6px; border-radius:4px; font-family:inherit;">
+              <option value="15m">15 min</option>
+              <option value="1h" selected>1 h</option>
+              <option value="3h">3 h</option>
+            </select>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" id="sites" checked> Sitios móviles (oficial)</label>
+          <label style="display:flex; align-items:center; gap:8px;"><input type="checkbox" id="show-resources" checked> Centros de Ayuda / Acopio</label>
+        </div>
+
+        <div style="background:#1c1c21; border-radius:8px; padding:12px; font-size:11px;">
+          <div style="display:flex; align-items:center; gap:6px; margin:4px 0;"><span style="width:10px; height:10px; border-radius:50%; background:#2ecc71; display:inline-block;"></span>Operativo</div>
+          <div style="display:flex; align-items:center; gap:6px; margin:4px 0;"><span style="width:10px; height:10px; border-radius:50%; background:#f1c40f; display:inline-block;"></span>Degradado</div>
+          <div style="display:flex; align-items:center; gap:6px; margin:4px 0;"><span style="width:10px; height:10px; border-radius:50%; background:#e74c3c; display:inline-block;"></span>Afectación probable</div>
+        </div>
+
+        <div style="background:#1c1c21; border-radius:8px; padding:12px; font-size:12px;" id="rankings-panel">
+          <h4 style="margin:0 0 8px; font-size:13px; border-bottom:1px solid var(--border-color); padding-bottom:4px;">Rendimiento de Operadores</h4>
+          <div id="rankings-list">
+            <div style="opacity:0.7">Cargando datos...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Point Modal Overlay -->
+<div id="add-point-modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title">Añadir punto de ayuda</h3>
+      <button class="modal-close" id="btn-modal-close">×</button>
+    </div>
+    <form id="add-point-form">
+      <div class="form-group">
+        <label>Tipo de reporte</label>
+        <select id="modal-kind" required>
+          <option value="centro_acopio">Centro de Acopio</option>
+          <option value="olla_comunitaria">Olla Comunitaria</option>
+          <option value="hospital">Punto de Salud / Hospital</option>
+          <option value="refugio">Refugio / Albergue</option>
+          <option value="agua">Distribución de Agua</option>
+          <option value="energia">Punto de Energía</option>
+          <option value="internet">Punto de Acceso Internet</option>
+          <option value="via_bloqueada">Vía Bloqueada</option>
+          <option value="afectacion_estructural">Afectación Estructural</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Nombre / Título</label>
+        <input type="text" id="modal-name" placeholder="Ej. Polideportivo San Pedro" required>
+      </div>
+      <div class="form-group">
+        <label>Dirección / Ubicación específica</label>
+        <input type="text" id="modal-address" placeholder="Ej. Calle 5 # 12-30" required>
+      </div>
+      <div class="form-group">
+        <label>Teléfono contacto (opcional)</label>
+        <input type="tel" id="modal-phone" placeholder="Ej. 3001234567">
+      </div>
+      <div class="form-group">
+        <label>Urgencia</label>
+        <select id="modal-urgency">
+          <option value="urgente">Urgente</option>
+          <option value="normal">Normal</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Necesidades iniciales (separadas por comas)</label>
+        <input type="text" id="modal-needs" placeholder="Ej. Colchonetas, Pañales, Agua">
+      </div>
+      <button type="submit" class="btn-add-point" style="width:100%; margin-top:10px;">ENVIAR REPORTE</button>
+    </form>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/map.js" defer></script>
+</body>
+</html>

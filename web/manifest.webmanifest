@@ -1,0 +1,9 @@
+{
+  "name": "Colombia Difunde",
+  "short_name": "C. Difunde",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1f3a",
+  "theme_color": "#0b1f3a",
+  "description": "Sonda de conectividad móvil para emergencias en Colombia"
+}

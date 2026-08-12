@@ -1,0 +1,45 @@
+# PostgreSQL/PostGIS + servidor Colombia Difunde.
+# Arranque rápido:
+#   docker compose up -d
+#   docker compose exec server sh -c 'cd /app && ./cd-server load-mapping /data/asn_operator_mapping.csv'
+#   docker compose exec server sh -c './cd-server import-data /data/raw'
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: colombia
+      POSTGRES_PASSWORD: colombia
+      POSTGRES_DB: colombia
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U colombia -d colombia"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "5432:5432"
+
+  server:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://colombia:colombia@db:5432/colombia?sslmode=disable
+      H3_RESOLUTION: ${H3_RESOLUTION:-8}
+      ASN_MAPPING_FROM_DB: "true"
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      # Datasets oficiales (del scraper) y mappings, para import-data/load-mapping.
+      - ./data:/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/p || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
