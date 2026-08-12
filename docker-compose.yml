@@ -18,7 +18,7 @@ services:
       timeout: 3s
       retries: 10
     ports:
-      - "5432:5432"
+      - "5434:5432"
 
   server:
     build: .
