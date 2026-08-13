@@ -125,6 +125,66 @@ function apiFetch(input, init) {
   // Custom Markers for Resources
   var resourceMarkersGroup = L.layerGroup().addTo(map);
 
+  // Pulsing sismo marker at San José del Palmar (4.9, -76.25)
+  var sismoLatLng = [4.9, -76.25];
+  var sismoIcon = L.divIcon({
+    className: 'pulsating-sismo-container',
+    html: '<div class="pulsating-sismo-dot"></div>',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+  });
+
+  var sismoMarker = L.marker(sismoLatLng, { icon: sismoIcon }).addTo(map);
+
+  sismoMarker.bindPopup(function () {
+    var container = document.createElement("div");
+    container.style.width = "260px";
+    container.style.maxHeight = "300px";
+    container.style.overflowY = "auto";
+    container.innerHTML = "<b>Cargando historial de sismos...</b>";
+
+    fetch("https://srvags.sgc.gov.co/arcgis/rest/services/catalogo_sismos/catalogo_de_sismos_2/FeatureServer/0/query?where=MUN_CODIGO%3D%2727660%27&outFields=ESP_MAGNITUD,ESP_PROFUNDIDAD,ESP_FECHA_LONG,ESP_LATITUD,ESP_LONGITUD&orderByFields=ESP_FECHA_LONG+DESC&resultRecordCount=15&f=json")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error || !data.features || data.features.length === 0) {
+          container.innerHTML = "<b>Epicentro: San José del Palmar, Chocó</b><br>No se encontraron réplicas recientes registradas.";
+          return;
+        }
+
+        var html = "<b>Epicentro: San José del Palmar (Terremoto y Réplicas)</b><br><span style='font-size:11px;color:var(--text-secondary);'>Datos oficiales del Servicio Geológico Colombiano</span><hr style='border:0;border-top:1px solid var(--border-color);margin:8px 0;'>";
+        html += "<div style='display:flex;flex-direction:column;gap:6px;'>";
+
+        data.features.forEach(function (f) {
+          var attr = f.attributes;
+          var mag = attr.ESP_MAGNITUD ? attr.ESP_MAGNITUD.toFixed(1) : "?";
+          var prof = attr.ESP_PROFUNDIDAD ? attr.ESP_PROFUNDIDAD.toFixed(0) : "?";
+          var dateVal = attr.ESP_FECHA_LONG;
+          var dateStr = "Fecha desconocida";
+          if (dateVal) {
+            var date = new Date(dateVal);
+            dateStr = date.toLocaleString('es-CO', { timeZone: 'America/Bogota', hour12: true });
+          }
+          
+          var color = "#16a34a"; // green
+          if (parseFloat(mag) >= 5.0) color = "#dc2626"; // red
+          else if (parseFloat(mag) >= 4.0) color = "#d97706"; // orange
+
+          html += "<div style='background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;border-left:4px solid " + color + ";'>";
+          html += "<strong>Magnitud: " + mag + "</strong> M<sub>w</sub><br>";
+          html += "<span style='font-size:11px;color:var(--text-secondary);'>Profundidad: " + prof + " km</span><br>";
+          html += "<span style='font-size:11px;color:var(--text-secondary);'>" + dateStr + "</span>";
+          html += "</div>";
+        });
+        html += "</div>";
+        container.innerHTML = html;
+      })
+      .catch(function () {
+        container.innerHTML = "<b>San José del Palmar, Chocó</b><br>Error al consultar el catálogo de sismos del SGC.";
+      });
+
+    return container;
+  });
+
   // Helper: Haversine distance
   function getDistance(lat1, lon1, lat2, lon2) {
     var R = 6371e3; // meters
