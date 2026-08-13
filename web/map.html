@@ -1116,9 +1116,28 @@ html, body {
   </div>
 </div>
 
+<!-- Disclaimer Modal Overlay -->
+<div id="disclaimer-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:99999; backdrop-filter:blur(8px); align-items:center; justify-content:center; padding:20px;">
+  <div style="background:var(--bg-sidebar); border:1px solid var(--border-color); border-radius:16px; max-width:480px; width:100%; padding:24px; box-shadow:0 20px 25px -5px rgba(0,0,0,0.5); display:flex; flex-direction:column; gap:16px;">
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div style="background:rgba(59, 130, 246, 0.1); border:1px solid var(--accent-color); color:var(--accent-color); border-radius:50%; width:36px; height:36px; display:flex; align-items:center; justify-content:center;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      </div>
+      <h3 style="margin:0; font-size:16px; font-weight:700; color:var(--text-primary);">Medición de Cobertura y Señal</h3>
+    </div>
+    <p style="margin:0; font-size:13px; color:var(--text-secondary); line-height:1.6; text-align:justify;">
+      Esta aplicación mide de forma automática la calidad de la señal y latencia de internet. Esto nos ayuda a mapear el estado de las telecomunicaciones y detectar las áreas con cobertura afectada por emergencias.
+    </p>
+    <p style="margin:0; font-size:12px; color:#fbbf24; font-weight:600; line-height:1.5;">
+      ✓ No recopila ubicación exacta persistente ni información privada.
+    </p>
+    <button id="btn-accept-disclaimer" style="background:var(--accent-color); border:none; color:white; font-size:13px; font-weight:700; padding:12px; border-radius:8px; cursor:pointer; width:100%; transition:background 0.2s;">ACEPTAR Y CONTINUAR</button>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="/map.js?v=2" defer></script>
+<script src="/map.js?v=3" defer></script>
 </body>
 </html>

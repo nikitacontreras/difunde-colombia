@@ -980,9 +980,109 @@ function apiFetch(input, init) {
     });
   }
 
+  async function runAutomaticConnectivityTest() {
+    var statusEl = document.getElementById("test-status");
+    var followupEl = document.getElementById("test-followup");
+    var btn = document.getElementById("btn-run-test");
+    
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "MIDIENDO...";
+    }
+    statusEl.style.display = "block";
+    statusEl.textContent = "Obteniendo ubicación...";
+    followupEl.style.display = "none";
+
+    var gps = await new Promise(function(res) {
+      if (!("geolocation" in navigator)) { res({ ok: false }); return; }
+      navigator.geolocation.getCurrentPosition(
+        function(p) { res({ ok: true, lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }); },
+        function() { res({ ok: false }); },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+
+    if (!gps.ok) {
+      statusEl.textContent = "Medición omitida: se requiere ubicación GPS.";
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "MEDIR RED";
+      }
+      return;
+    }
+
+    statusEl.textContent = "Midiendo latencia de red...";
+    var net = connection();
+    var probes = await runTestProbes();
+
+    statusEl.textContent = "Enviando resultados...";
+    testPayload = {
+      x: gps.lat, y: gps.lon, a: Math.round(gps.acc || 0),
+      r: Math.round(median(probes.samples)),
+      j: Math.round(jitter(probes.samples)),
+      n: probes.samples.length,
+      ok: probes.ok,
+      f: probes.fail,
+      q: probes.ok / Math.max(1, probes.ok + probes.fail),
+      k1: Math.round(probes.k1),
+      k4: Math.round(probes.k4),
+      t: Math.floor(Date.now() / 1000),
+      u: 1
+    };
+    if (net) {
+      if (net.e) testPayload.e = net.e;
+      if (net.br >= 0) testPayload.br = net.br;
+      if (net.bd >= 0) testPayload.bd = net.bd;
+      testPayload.sd = net.sd;
+    }
+
+    apiFetch("/o", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(testPayload)
+    }).then(function(r) {
+      var id = r.headers.get("X-Obs-ID");
+      if (r.ok || r.status === 201) {
+        testObsId = id ? parseInt(id, 10) : null;
+        var rttVal = Math.round(median(probes.samples));
+        statusEl.textContent = "¡Medición completada! RTT medio: " + rttVal + " ms";
+        followupEl.style.display = "flex";
+        refresh();
+      } else {
+        statusEl.textContent = "Error al registrar medición.";
+      }
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "MEDIR RED";
+      }
+    }).catch(function() {
+      statusEl.textContent = "Error de red al enviar medición.";
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "MEDIR RED";
+      }
+    });
+  }
+
   function refresh() { loadCells(); loadSites(); loadResources(); }
   refresh();
   map.on("moveend", refresh);
+
+  // Disclaimer and auto-run logic
+  var disclaimerAccepted = localStorage.getItem("disclaimer_accepted");
+  if (!disclaimerAccepted) {
+    var modal = document.getElementById("disclaimer-modal");
+    if (modal) {
+      modal.style.display = "flex";
+      document.getElementById("btn-accept-disclaimer").addEventListener("click", function() {
+        modal.style.display = "none";
+        localStorage.setItem("disclaimer_accepted", "true");
+        runAutomaticConnectivityTest();
+      });
+    }
+  } else {
+    runAutomaticConnectivityTest();
+  }
   
   // Wire filters
   document.getElementById("op").addEventListener("change", refresh);
