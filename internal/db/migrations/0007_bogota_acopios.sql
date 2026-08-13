@@ -1,0 +1,10 @@
+-- Migración 0007: Insertar centros de acopio reales en Bogotá.
+INSERT INTO resources (kind, name, address, latitude, longitude, geom, details, status) VALUES
+('centro_acopio', 'LIBERARTE', 'LIBERARTE, Bogotá', 4.701206, -74.0431803, ST_SetSRID(ST_MakePoint(-74.0431803, 4.701206), 4326), '{"needs": ["Víveres", "Medicamentos", "Ropa", "Cobijas"]}'::jsonb, 'approved'),
+('centro_acopio', 'Centro de Acopio Teusaquillo', 'Cra. 17 # 30-54, Teusaquillo, Bogotá', 4.6197542, -74.0731735, ST_SetSRID(ST_MakePoint(-74.0731735, 4.6197542), 4326), '{"needs": ["Agua embotellada", "Alimentos no perecederos", "Elementos de aseo"]}'::jsonb, 'approved'),
+('centro_acopio', 'Centro de Acopio La Candelaria', 'Cl. 12d #1a-10, Bogotá', 4.5990834, -74.0687996, ST_SetSRID(ST_MakePoint(-74.0687996, 4.5990834), 4326), '{"needs": ["Alimentos", "Cobijas", "Kit de primeros auxilios"]}'::jsonb, 'approved'),
+('centro_acopio', 'Sede Colombia Humana', 'Tv. 17a Bis #36-74, Bogotá', 4.6258886, -74.0723231, ST_SetSRID(ST_MakePoint(-74.0723231, 4.6258886), 4326), '{"needs": ["Ropa abrigada", "Alimentos no perecederos", "Agua"]}'::jsonb, 'approved'),
+('centro_acopio', 'Centro de Acopio Cra. 18', 'Cra. 18 #32a-11, Bogotá', 4.6212328, -74.0735874, ST_SetSRID(ST_MakePoint(-74.0735874, 4.6212328), 4326), '{"needs": ["Elementos de higiene", "Colchonetas", "Víveres"]}'::jsonb, 'approved'),
+('centro_acopio', 'Centro de Acopio Bosa', 'Cra. 87 # 49A-38, Bosa, Bogotá', 4.627815, -74.177849, ST_SetSRID(ST_MakePoint(-74.177849, 4.627815), 4326), '{"needs": ["Alimentos", "Agua", "Ropa para niños"]}'::jsonb, 'approved'),
+('centro_acopio', 'Universidad ESAP', 'Cl. 44 #53-37, Bogotá', 4.6443987, -74.0928816, ST_SetSRID(ST_MakePoint(-74.0928816, 4.6443987), 4326), '{"needs": ["Víveres", "Medicamentos", "Elementos de bioseguridad"]}'::jsonb, 'approved'),
+('centro_acopio', 'Populcoop', 'Cl. 25 #39-92, Bogotá', 4.6323954, -74.0899451, ST_SetSRID(ST_MakePoint(-74.0899451, 4.6323954), 4326), '{"needs": ["Cobijas", "Agua embotellada", "Alimentos enlatados"]}'::jsonb, 'approved');
