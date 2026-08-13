@@ -351,6 +351,7 @@ func (s *Server) buildObservation(r *http.Request, v observe.Validation) store.O
 		o.TransferEstimateBps = transferEstimate(v.Probe1kMs, v.Probe4kMs)
 	}
 	if ip, ok := clientIP(r, s.cfg.TrustedProxies); ok {
+		o.ClientIP = ip.String()
 		if info, found := s.asn.Lookup(ip); found {
 			asnVal := info.ASN
 			o.ASN = &asnVal

@@ -13,6 +13,7 @@ import (
 type Observation struct {
 	ReceivedAt          time.Time
 	ObservedAt          time.Time
+	ClientIP            string
 	Latitude, Longitude float64
 	Accuracy            float64
 	H3Cell              string

@@ -38,16 +38,16 @@ func (s *PGStore) InsertObservation(ctx context.Context, o Observation) (int64, 
 		received_at, observed_at, latitude, longitude, accuracy, geom, h3_cell,
 		asn, operator, mobile, http_rtt_min, http_rtt_median, jitter, success_ratio,
 		samples, failed_requests, effective_type, browser_rtt, browser_downlink,
-		save_data, call_signal, operator_user, probe_1k_ms, probe_4k_ms, transfer_estimate_bps
+		save_data, call_signal, operator_user, probe_1k_ms, probe_4k_ms, transfer_estimate_bps, client_ip
 	) VALUES ($1,$2,$3,$4,$5, ST_SetSRID(ST_MakePoint($4,$3),4326), $6,
-		$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+		$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
 		RETURNING id`
 	var id int64
 	err := s.pool.QueryRow(ctx, query,
 		o.ReceivedAt, o.ObservedAt, o.Latitude, o.Longitude, o.Accuracy, o.H3Cell,
 		o.ASN, o.Operator, o.Mobile, o.HttpRTTMin, o.HttpRTTMedian, o.Jitter, o.SuccessRatio,
 		o.Samples, o.FailedRequests, nilStr(o.EffectiveType), o.BrowserRTT, o.BrowserDownlink,
-		o.SaveData, nilStr(o.CallSignal), nilStr(o.OperatorUser), o.Probe1kMs, o.Probe4kMs, o.TransferEstimateBps,
+		o.SaveData, nilStr(o.CallSignal), nilStr(o.OperatorUser), o.Probe1kMs, o.Probe4kMs, o.TransferEstimateBps, nilStr(o.ClientIP),
 	).Scan(&id)
 	if err != nil {
 		return 0, err
@@ -65,14 +65,14 @@ func (s *PGStore) InsertObservations(ctx context.Context, obs []Observation) err
 			received_at, observed_at, latitude, longitude, accuracy, geom, h3_cell,
 			asn, operator, mobile, http_rtt_min, http_rtt_median, jitter, success_ratio,
 			samples, failed_requests, effective_type, browser_rtt, browser_downlink,
-			save_data, call_signal, operator_user, probe_1k_ms, probe_4k_ms, transfer_estimate_bps
+			save_data, call_signal, operator_user, probe_1k_ms, probe_4k_ms, transfer_estimate_bps, client_ip
 		) VALUES ($1,$2,$3,$4,$5, ST_SetSRID(ST_MakePoint($4,$3),4326), $6,
-			$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`
+			$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`
 		batch.Queue(query,
 			o.ReceivedAt, o.ObservedAt, o.Latitude, o.Longitude, o.Accuracy, o.H3Cell,
 			o.ASN, o.Operator, o.Mobile, o.HttpRTTMin, o.HttpRTTMedian, o.Jitter, o.SuccessRatio,
 			o.Samples, o.FailedRequests, nilStr(o.EffectiveType), o.BrowserRTT, o.BrowserDownlink,
-			o.SaveData, nilStr(o.CallSignal), nilStr(o.OperatorUser), o.Probe1kMs, o.Probe4kMs, o.TransferEstimateBps)
+			o.SaveData, nilStr(o.CallSignal), nilStr(o.OperatorUser), o.Probe1kMs, o.Probe4kMs, o.TransferEstimateBps, nilStr(o.ClientIP))
 	}
 	br := s.pool.SendBatch(ctx, batch)
 	defer br.Close()
