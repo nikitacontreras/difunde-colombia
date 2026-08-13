@@ -135,11 +135,11 @@ func mapMNC(mnc string) string {
 	switch mnc {
 	case "101", "1", "001", "01", "2", "002", "02":
 		return "comcel"
-	case "103", "3", "003", "03":
+	case "123", "003", "3", "03":
 		return "movistar"
-	case "104", "4", "004", "04", "130":
+	case "103", "111", "020", "142", "104", "4", "004", "04":
 		return "colombia movil"
-	case "123", "24":
+	case "360", "130", "24":
 		return "wom"
 	default:
 		return observe.OpOtro
