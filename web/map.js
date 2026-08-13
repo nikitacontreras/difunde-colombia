@@ -174,9 +174,10 @@ function apiFetch(input, init) {
 
       // Tab filters
       if (currentTab === "acopios" && r.Kind !== "centro_acopio") return false;
-      if (currentTab === "necesidades" && (r.Kind === "centro_acopio" || r.Kind === "refugio" || r.Kind === "olla_comunitaria")) return false;
+      if (currentTab === "necesidades" && (r.Kind === "centro_acopio" || r.Kind === "refugio" || r.Kind === "olla_comunitaria" || r.Kind === "logistica")) return false;
       if (currentTab === "ollas" && r.Kind !== "olla_comunitaria") return false;
       if (currentTab === "refugios" && r.Kind !== "refugio") return false;
+      if (currentTab === "logistica" && r.Kind !== "logistica") return false;
 
       // Search keyword
       if (searchQuery) {
@@ -208,9 +209,10 @@ function apiFetch(input, init) {
     var approvedList = allResources.filter(function (r) { return r.Status === "approved"; });
     document.getElementById("count-all").textContent = approvedList.length;
     document.getElementById("count-acopios").textContent = approvedList.filter(r => r.Kind === "centro_acopio").length;
-    document.getElementById("count-necesidades").textContent = approvedList.filter(r => r.Kind !== "centro_acopio" && r.Kind !== "refugio" && r.Kind !== "olla_comunitaria").length;
+    document.getElementById("count-necesidades").textContent = approvedList.filter(r => r.Kind !== "centro_acopio" && r.Kind !== "refugio" && r.Kind !== "olla_comunitaria" && r.Kind !== "logistica").length;
     document.getElementById("count-ollas").textContent = approvedList.filter(r => r.Kind === "olla_comunitaria").length;
     document.getElementById("count-refugios").textContent = approvedList.filter(r => r.Kind === "refugio").length;
+    document.getElementById("count-logistica").textContent = approvedList.filter(r => r.Kind === "logistica").length;
     if (window.IS_ADMIN && document.getElementById("count-pending")) {
       document.getElementById("count-pending").textContent = allResources.filter(r => r.Status !== "approved").length;
     }
@@ -283,7 +285,8 @@ function apiFetch(input, init) {
       var helping = (r.Details && r.Details.helping) || 0;
       
       var color = "#ff9800"; // default orange
-      if (urgency === "urgente") color = "#c62828";
+      if (r.Kind === "logistica") color = "#009688";
+      else if (urgency === "urgente") color = "#c62828";
       else if (needed > 0) color = "#ef6c00";
       else if (helping > 0) color = "#1565c0";
 
