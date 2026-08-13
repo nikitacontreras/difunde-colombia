@@ -809,14 +809,25 @@ function apiFetch(input, init) {
     var b = map.getBounds();
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
     apiFetch("/sites?bbox=" + encodeURIComponent(bbox), { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (sites) {
-      var fc = { type: "FeatureCollection", features: sites.map(function (s) {
-        return { type: "Feature", geometry: { type: "Point", coordinates: [s.x, s.y] },
-          properties: { o: s.o, nd: s.nd, ad: s.ad } };
-      })};
       sitesClusterGroup.clearLayers();
-      sitesLayer.clearLayers();
-      sitesLayer.addData(fc);
-      sitesClusterGroup.addLayer(sitesLayer);
+      var markers = [];
+      sites.forEach(function (s) {
+        var latlng = L.latLng(s.y, s.x);
+        var icon = L.divIcon({
+          className: 'pulsating-dot-container',
+          html: '<div class="pulsating-dot"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        });
+        var marker = L.marker(latlng, { icon: icon });
+        var op = s.o ? (s.o.charAt(0).toUpperCase() + s.o.slice(1)) : "Desconocido";
+        var html = "<b>Torre de Telefonía Móvil</b><br>Operador: " + op;
+        if (s.nd) html += "<br>Barrio: " + s.nd;
+        if (s.ad) html += "<br>Dirección: " + s.ad;
+        marker.bindPopup(html);
+        markers.push(marker);
+      });
+      sitesClusterGroup.addLayers(markers);
     }).catch(function () {});
   }
 
