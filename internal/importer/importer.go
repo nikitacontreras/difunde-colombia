@@ -46,7 +46,8 @@ func ImportData(ctx context.Context, pool *pgxpool.Pool, dir string, h3res int) 
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".csv") {
+		name := strings.ToLower(d.Name())
+		if !d.IsDir() && (strings.HasSuffix(name, ".csv") || strings.HasSuffix(name, ".csv.gz") || strings.HasSuffix(name, ".gz")) {
 			files = append(files, path)
 		}
 		return nil
