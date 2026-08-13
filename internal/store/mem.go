@@ -14,17 +14,20 @@ import (
 // MemStore es un Store en memoria para pruebas y para arrancar
 // sin PostgreSQL (modo degradado explícito).
 type MemStore struct {
-	mu        sync.Mutex
-	obs       []Observation
-	nextID    int64
-	sites     []Site
-	resources []Resource
-	coverage  []CoverageRow
-	official  []OfficialSitesRow
+	mu          sync.Mutex
+	obs         []Observation
+	nextID      int64
+	sites       []Site
+	resources   []Resource
+	coverage    []CoverageRow
+	official    []OfficialSitesRow
+	validations map[string]bool
 }
 
 func NewMemStore() *MemStore {
-	return &MemStore{}
+	return &MemStore{
+		validations: make(map[string]bool),
+	}
 }
 
 func (m *MemStore) InsertObservation(ctx context.Context, o Observation) (int64, error) {
@@ -196,6 +199,21 @@ func (m *MemStore) UpdateResourceDetails(ctx context.Context, id int64, details 
 	}
 	return nil
 }
+
+func (m *MemStore) InsertResourceValidation(ctx context.Context, resourceID int64, voteType, ip, userAgent, fingerprint string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.validations == nil {
+		m.validations = make(map[string]bool)
+	}
+	key := fmt.Sprintf("%d:%s", resourceID, fingerprint)
+	if m.validations[key] {
+		return false, nil
+	}
+	m.validations[key] = true
+	return true, nil
+}
+
 
 
 func (m *MemStore) Coverage(ctx context.Context, municipality, operator, technology string) ([]CoverageRow, error) {

@@ -2,11 +2,13 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"colombia-difunde/internal/observe"
@@ -255,6 +257,20 @@ func (s *PGStore) UpdateResourceDetails(ctx context.Context, id int64, details m
 	_, err = s.pool.Exec(ctx, query, current, id)
 	return err
 }
+
+func (s *PGStore) InsertResourceValidation(ctx context.Context, resourceID int64, voteType, ip, userAgent, fingerprint string) (bool, error) {
+	_, err := s.pool.Exec(ctx, `INSERT INTO resource_validations (resource_id, vote_type, ip, user_agent, fingerprint) VALUES ($1, $2, $3, $4, $5)`,
+		resourceID, voteType, ip, userAgent, fingerprint)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 
 
 // Coverage devuelve el snapshot oficial de cobertura municipal, con

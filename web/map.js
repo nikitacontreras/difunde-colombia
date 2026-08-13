@@ -418,6 +418,10 @@ function apiFetch(input, init) {
         renderReportList();
         drawResourceMarkers();
         selectResource(selectedResource);
+      } else if (res.status === 409) {
+        res.text().then(function(txt) {
+          toast(txt || "Ya has registrado una validación para este punto.");
+        });
       } else {
         toast("Error al actualizar información.");
       }

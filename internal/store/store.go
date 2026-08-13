@@ -121,6 +121,7 @@ type Store interface {
 	InsertResource(ctx context.Context, r Resource) (int64, error)
 	UpdateResourceStatus(ctx context.Context, id int64, status string) error
 	UpdateResourceDetails(ctx context.Context, id int64, details map[string]any) error
+	InsertResourceValidation(ctx context.Context, resourceID int64, voteType, ip, userAgent, fingerprint string) (bool, error)
 	// Coverage y OfficialSites exponen el baseline oficial (municipal).
 	// municipality se filtra como substring (case-insensitive); vacío = todo.
 	Coverage(ctx context.Context, municipality, operator, technology string) ([]CoverageRow, error)

@@ -824,6 +824,38 @@ func (s *Server) handleUpdateResourceDetails(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "bad payload", http.StatusBadRequest)
 		return
 	}
+	var isVote bool
+	var voteType string
+	if _, ok := body.Details["confirms"]; ok {
+		isVote = true
+		voteType = "confirm"
+	} else if _, ok := body.Details["dismisses"]; ok {
+		isVote = true
+		voteType = "disprove"
+	}
+
+	if isVote {
+		ipStr := ""
+		if ip, ok := clientIP(r, s.cfg.TrustedProxies); ok {
+			ipStr = ip.String()
+		}
+		ua := r.Header.Get("User-Agent")
+		h := sha256.New()
+		h.Write([]byte(ipStr + ua))
+		fingerprint := fmt.Sprintf("%x", h.Sum(nil))
+
+		// Try to record the vote
+		inserted, err := s.store.InsertResourceValidation(r.Context(), body.ID, voteType, ipStr, ua, fingerprint)
+		if err != nil {
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+		if !inserted {
+			http.Error(w, "ya registraste una validación para este punto", http.StatusConflict)
+			return
+		}
+	}
+
 	err := s.store.UpdateResourceDetails(r.Context(), body.ID, body.Details)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
