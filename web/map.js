@@ -97,6 +97,11 @@ function apiFetch(input, init) {
     }
   }).addTo(map);
 
+  var sitesClusterGroup = L.markerClusterGroup({
+    disableClusteringAtZoom: 16,
+    maxClusterRadius: 50
+  }).addTo(map);
+
   var sitesLayer = L.geoJSON(null, {
     pointToLayer: function (f, latlng) {
       var icon = L.divIcon({
@@ -115,7 +120,7 @@ function apiFetch(input, init) {
       if (p.ad) html += "<br>Dirección: " + p.ad;
       layer.bindPopup(html);
     }
-  }).addTo(map);
+  });
 
   // Custom Markers for Resources
   var resourceMarkersGroup = L.layerGroup().addTo(map);
@@ -731,6 +736,16 @@ function apiFetch(input, init) {
   }
 
   function loadSites() {
+    if (!document.getElementById("sites").checked) {
+      sitesClusterGroup.clearLayers();
+      sitesLayer.clearLayers();
+      return;
+    }
+    if (map.getZoom() < 13) {
+      sitesClusterGroup.clearLayers();
+      sitesLayer.clearLayers();
+      return;
+    }
     var b = map.getBounds();
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
     apiFetch("/sites?bbox=" + encodeURIComponent(bbox), { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (sites) {
@@ -738,8 +753,10 @@ function apiFetch(input, init) {
         return { type: "Feature", geometry: { type: "Point", coordinates: [s.x, s.y] },
           properties: { o: s.o, nd: s.nd, ad: s.ad } };
       })};
+      sitesClusterGroup.clearLayers();
       sitesLayer.clearLayers();
-      if (document.getElementById("sites").checked) sitesLayer.addData(fc);
+      sitesLayer.addData(fc);
+      sitesClusterGroup.addLayer(sitesLayer);
     }).catch(function () {});
   }
 
@@ -1091,7 +1108,12 @@ function apiFetch(input, init) {
   // Wire filters
   document.getElementById("op").addEventListener("change", refresh);
   document.getElementById("win").addEventListener("change", refresh);
-  document.getElementById("sites").addEventListener("change", function () { loadSites(); });
+  document.getElementById("sites").addEventListener("change", function () {
+    if (this.checked && map.getZoom() < 13) {
+      toast("Haz zoom para visualizar las antenas móviles");
+    }
+    loadSites();
+  });
   document.getElementById("show-resources").addEventListener("change", function () {
     if (document.getElementById("show-resources").checked) {
       resourceMarkersGroup.addTo(map);
