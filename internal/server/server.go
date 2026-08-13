@@ -961,7 +961,7 @@ func (s *Server) handleSismosProxy(w http.ResponseWriter, r *http.Request) {
 	if muni == "" {
 		muni = "27660"
 	}
-	url := fmt.Sprintf("https://srvags.sgc.gov.co/arcgis/rest/services/catalogo_sismos/catalogo_de_sismos_2/FeatureServer/0/query?where=MUN_CODIGO%%3D%%27%s%%27&outFields=ESP_MAGNITUD,ESP_PROFUNDIDAD,ESP_FECHA_LONG,ESP_LATITUD,ESP_LONGITUD&orderByFields=ESP_FECHA_LONG+DESC&resultRecordCount=15&f=json", muni)
+	url := fmt.Sprintf("https://srvags.sgc.gov.co/arcgis/rest/services/catalogo_sismos/catalogo_de_sismos_2/FeatureServer/0/query?where=MUN_CODIGO%%3D%%27%s%%27&outFields=ESP_MAGNITUD,ESP_PROFUNDIDAD,ESP_FECHA_LONG,ESP_LATITUD,ESP_LONGITUD&resultRecordCount=100&f=json", muni)
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()

@@ -146,7 +146,13 @@ function apiFetch(input, init) {
     fetch("/api/sismos?muni=27660")
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (data.error || !data.features || data.features.length === 0) {
+        var sismosList = data.features.filter(function (f) {
+          return f.attributes && f.attributes.ESP_FECHA_LONG;
+        }).sort(function (a, b) {
+          return b.attributes.ESP_FECHA_LONG - a.attributes.ESP_FECHA_LONG;
+        }).slice(0, 15);
+
+        if (sismosList.length === 0) {
           container.innerHTML = "<b>Epicentro: San José del Palmar, Chocó</b><br>No se encontraron réplicas recientes registradas.";
           return;
         }
@@ -154,7 +160,7 @@ function apiFetch(input, init) {
         var html = "<b>Epicentro: San José del Palmar (Terremoto y Réplicas)</b><br><span style='font-size:11px;color:var(--text-secondary);'>Datos oficiales del Servicio Geológico Colombiano</span><hr style='border:0;border-top:1px solid var(--border-color);margin:8px 0;'>";
         html += "<div style='display:flex;flex-direction:column;gap:6px;'>";
 
-        data.features.forEach(function (f) {
+        sismosList.forEach(function (f) {
           var attr = f.attributes;
           var mag = attr.ESP_MAGNITUD ? attr.ESP_MAGNITUD.toFixed(1) : "?";
           var prof = attr.ESP_PROFUNDIDAD ? attr.ESP_PROFUNDIDAD.toFixed(0) : "?";
