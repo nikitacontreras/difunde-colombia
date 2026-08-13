@@ -143,7 +143,7 @@ function apiFetch(input, init) {
     container.style.overflowY = "auto";
     container.innerHTML = "<b>Cargando historial de sismos...</b>";
 
-    fetch("https://srvags.sgc.gov.co/arcgis/rest/services/catalogo_sismos/catalogo_de_sismos_2/FeatureServer/0/query?where=MUN_CODIGO%3D%2727660%27&outFields=ESP_MAGNITUD,ESP_PROFUNDIDAD,ESP_FECHA_LONG,ESP_LATITUD,ESP_LONGITUD&orderByFields=ESP_FECHA_LONG+DESC&resultRecordCount=15&f=json")
+    fetch("/api/sismos?muni=27660")
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.error || !data.features || data.features.length === 0) {

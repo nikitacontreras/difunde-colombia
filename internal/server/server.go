@@ -2,10 +2,12 @@
 package server
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -98,6 +100,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /report", s.handleReport)
 	s.mux.HandleFunc("POST /resources/update-details", s.handleUpdateResourceDetails)
 	s.mux.HandleFunc("POST /resources/moderate", s.handleModerateResource)
+	s.mux.HandleFunc("GET /api/sismos", s.handleSismosProxy)
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 }
 
@@ -952,3 +955,34 @@ func serveAsset(w http.ResponseWriter, r *http.Request, data []byte, ctype strin
 func round1(v float64) float64 { return float64(int(v*10)) / 10 }
 func round3(v float64) float64 { return float64(int(v*1000)) / 1000 }
 func round5(v float64) float64 { return float64(int(v*100000)) / 100000 }
+
+func (s *Server) handleSismosProxy(w http.ResponseWriter, r *http.Request) {
+	muni := r.URL.Query().Get("muni")
+	if muni == "" {
+		muni = "27660"
+	}
+	url := fmt.Sprintf("https://srvags.sgc.gov.co/arcgis/rest/services/catalogo_sismos/catalogo_de_sismos_2/FeatureServer/0/query?where=MUN_CODIGO%%3D%%27%s%%27&outFields=ESP_MAGNITUD,ESP_PROFUNDIDAD,ESP_FECHA_LONG,ESP_LATITUD,ESP_LONGITUD&orderByFields=ESP_FECHA_LONG+DESC&resultRecordCount=15&f=json", muni)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Set standard user agent to avoid any potential blocks
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
