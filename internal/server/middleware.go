@@ -2,6 +2,8 @@ package server
 
 import (
 	"compress/gzip"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -10,6 +12,8 @@ import (
 	"sync"
 	"time"
 )
+
+const clientSessionCookieName = "cdfd_sid"
 
 // requestID genera o propaga un id de request para correlacionar logs.
 // Nunca contiene IP ni datos personales.
@@ -56,6 +60,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-Id", rid)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), payment=(), usb=()")
 
 		start := time.Now()
 		lw := &loggingWriter{ResponseWriter: w}
@@ -80,6 +86,8 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			defer gz.Close()
 			lw.ResponseWriter = &gzipWriter{ResponseWriter: w, w: gz}
 		}
+
+		ensureClientSessionCookie(lw, r)
 
 		next.ServeHTTP(lw, r)
 	})
@@ -107,6 +115,54 @@ func (s *Server) gzipEnabled(r *http.Request) bool {
 		return false
 	}
 	return strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
+}
+
+func ensureClientSessionCookie(w http.ResponseWriter, r *http.Request) {
+	if clientSessionID(r) != "" {
+		return
+	}
+	cookie := &http.Cookie{
+		Name:     clientSessionCookieName,
+		Value:    newClientSessionID(),
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 30,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		cookie.Secure = true
+	}
+	http.SetCookie(w, cookie)
+}
+
+func clientSessionID(r *http.Request) string {
+	cookie, err := r.Cookie(clientSessionCookieName)
+	if err != nil {
+		return ""
+	}
+	value := strings.ToLower(strings.TrimSpace(cookie.Value))
+	if len(value) != 32 {
+		return ""
+	}
+	for _, c := range value {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return ""
+		}
+	}
+	return value
+}
+
+func newClientSessionID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return requestID() + requestID()
+	}
+	return hex.EncodeToString(b)
+}
+
+func tooManyRequests(w http.ResponseWriter, retryAfter time.Duration) {
+	w.Header().Set("Retry-After", retryAfterSeconds(retryAfter))
+	http.Error(w, "too many requests", http.StatusTooManyRequests)
 }
 
 // bodyLimit limita el tamaño del cuerpo de las peticiones.

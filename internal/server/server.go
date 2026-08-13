@@ -31,6 +31,8 @@ type Server struct {
 	cells  geo.CellResolver
 	mux    *http.ServeMux
 	limits map[string]*rateLimiter
+	cache  *responseCache
+	fp     *fingerprintTracker
 
 	probe1k []byte
 	probe4k []byte
@@ -46,6 +48,8 @@ func New(cfg config.Config, st store.Store, ar asn.Resolver, ops *observe.Operat
 		mux:     http.NewServeMux(),
 		probe1k: makeProbeBody(1024),
 		probe4k: makeProbeBody(4096),
+		cache:   newResponseCache(256),
+		fp:      newFingerprintTracker(32, time.Hour),
 		limits: map[string]*rateLimiter{
 			"/p":      newRateLimiter(cfg.Rate.P, time.Minute),
 			"/probe":  newRateLimiter(cfg.Rate.Probe, time.Minute),
@@ -98,7 +102,7 @@ func (s *Server) routes() {
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.middleware(s.mux)
+	return bodyLimit(s.cfg.MaxBodyBytes)(s.middleware(s.mux))
 }
 
 // allow verifica rate limit por IP + bucket. La IP vive solo en memoria.
@@ -107,17 +111,78 @@ func (s *Server) allow(bucket string, r *http.Request) bool {
 	if !ok {
 		return true
 	}
+	if s.bucketUsesFingerprint(bucket) {
+		if fp := clientFingerprint(r); fp != "" {
+			if !s.fp.allow(ip.String(), fp) {
+				return false
+			}
+		}
+	}
 	if rl, ok := s.limits[bucket]; ok {
-		return rl.allow(bucket + ":" + ip.String())
+		key := bucket + ":" + ip.String()
+		if sid := clientSessionID(r); sid != "" {
+			key += ":" + sid
+		}
+		return rl.allow(key)
 	}
 	return true
+}
+
+func (s *Server) bucketUsesFingerprint(bucket string) bool {
+	switch bucket {
+	case "/o", "/sync", "/update", "/report":
+		return true
+	default:
+		return false
+	}
+}
+
+func clientFingerprint(r *http.Request) string {
+	fp := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Client-Fingerprint")))
+	if len(fp) != 8 {
+		return ""
+	}
+	for _, c := range fp {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return ""
+		}
+	}
+	return fp
+}
+
+func (s *Server) invalidateCaches() {
+	s.cache.clear()
+}
+
+func (s *Server) adminAllowed(r *http.Request) bool {
+	expected := strings.TrimSpace(os.Getenv("ADMIN_KEY"))
+	if expected == "" {
+		return false
+	}
+	token := strings.TrimSpace(r.Header.Get("X-Admin-Key"))
+	return token != "" && token == expected
+}
+
+func (s *Server) serveCachedJSON(w http.ResponseWriter, r *http.Request, key string, ttl time.Duration, cacheControl string, compute func() ([]byte, int, error)) (bool, int) {
+	if item, ok := s.cache.get(key); ok {
+		writeCachedJSON(w, r, item)
+		return true, 0
+	}
+	body, status, err := compute()
+	if err != nil {
+		return false, status
+	}
+	item := cacheEntry(body, cacheControl, ttl)
+	s.cache.set(key, item)
+	writeCachedJSON(w, r, item)
+	return true, 0
 }
 
 // ---- Sonda / probes ----
 
 func (s *Server) handleP(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/p", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -126,7 +191,7 @@ func (s *Server) handleP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/probe", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	size := r.PathValue("size")
@@ -146,7 +211,7 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleObserve(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/o", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	payload, err := decodePayload(r)
@@ -166,6 +231,7 @@ func (s *Server) handleObserve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "storage error", http.StatusServiceUnavailable)
 		return
 	}
+	s.invalidateCaches()
 	if v.WantID {
 		w.Header().Set("X-Obs-ID", strconv.FormatInt(id, 10))
 		if obs.Operator != "" && obs.Operator != observe.OpDesconocido {
@@ -179,7 +245,7 @@ func (s *Server) handleObserve(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/update", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	var body struct {
@@ -210,12 +276,13 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	s.invalidateCaches()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/sync", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	dec := json.NewDecoder(r.Body)
@@ -251,6 +318,7 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "storage error", http.StatusServiceUnavailable)
 		return
 	}
+	s.invalidateCaches()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -340,7 +408,7 @@ var windows = map[string]windowSpec{
 
 func (s *Server) handleCells(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/cells", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	f, win, ok := parseCellFilter(r, s.cfg)
@@ -348,84 +416,92 @@ func (s *Server) handleCells(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad bbox/operator/window", http.StatusBadRequest)
 		return
 	}
-	aggs, err := s.store.Cells(r.Context(), f)
-	if err != nil {
-		slog.Error("cells", "err", err)
-		http.Error(w, "storage error", http.StatusServiceUnavailable)
-		return
-	}
-	siteCounts, err := s.store.SitesByCell(r.Context())
-	if err != nil {
-		slog.Error("sitesByCell", "err", err)
-		http.Error(w, "storage error", http.StatusServiceUnavailable)
-		return
-	}
-
-	th := state.Thresholds{
-		MinSamples:               s.cfg.State.MinSamples,
-		HighConfidenceMinSamples: s.cfg.State.HighConfidenceMinSamples,
-		OperativeMaxRTT:          s.cfg.State.OperativeMaxRTT,
-		JitterElevated:           s.cfg.State.JitterElevated,
-		DegradedMinRTT:           s.cfg.State.DegradedMinRTT,
-		DegradedMaxSuccess:       s.cfg.State.DegradedMaxSuccess,
-		ProbableAffectMinSamples: s.cfg.State.ProbableAffectMinSamples,
-	}
-
-	type cellJSON struct {
-		H string  `json:"h"`
-		X float64 `json:"x"`
-		Y float64 `json:"y"`
-		N int     `json:"n"`
-		R float64 `json:"r"`
-		J float64 `json:"j"`
-		Q float64 `json:"q"`
-		O string  `json:"o"`
-		S string  `json:"s"`
-		C string  `json:"c"`
-		T int64   `json:"t"`
-		P int     `json:"p"` // sitios móviles oficiales en la celda
-	}
-
-	out := make([]cellJSON, 0, len(aggs))
-	for _, a := range aggs {
-		lat, lon, err := s.cells.CellCenter(a.Cell)
+	key := cacheKey("cells",
+		win.label,
+		strconv.FormatFloat(f.MinLon, 'f', 6, 64),
+		strconv.FormatFloat(f.MinLat, 'f', 6, 64),
+		strconv.FormatFloat(f.MaxLon, 'f', 6, 64),
+		strconv.FormatFloat(f.MaxLat, 'f', 6, 64),
+		f.Operator,
+	)
+	cacheControl := fmt.Sprintf("public, max-age=%d", win.maxAge)
+	if handled, status := s.serveCachedJSON(w, r, key, time.Duration(win.maxAge)*time.Second, cacheControl, func() ([]byte, int, error) {
+		aggs, err := s.store.Cells(r.Context(), f)
 		if err != nil {
-			continue
+			slog.Error("cells", "err", err)
+			return nil, http.StatusServiceUnavailable, err
 		}
-		res := state.Classify(state.Input{
-			SampleCount:      a.Count,
-			MedianRTT:        a.MedianRTT,
-			Jitter:           a.MedianJitter,
-			SuccessRatio:     a.SuccessRatio,
-			BaselineExpected: siteCounts[a.Cell] > 0,
-		}, th)
-		out = append(out, cellJSON{
-			H: a.Cell, X: round5(lon), Y: round5(lat), N: a.Count,
-			R: round1(a.MedianRTT), J: round1(a.MedianJitter), Q: round3(a.SuccessRatio),
-			O: a.TopOperator, S: res.State, C: res.Confidence,
-			T: a.LastObserved.Unix(), P: siteCounts[a.Cell],
-		})
-	}
-	body, err := json.Marshal(out)
-	if err != nil {
-		http.Error(w, "error", http.StatusInternalServerError)
+		siteCounts, err := s.store.SitesByCell(r.Context())
+		if err != nil {
+			slog.Error("sitesByCell", "err", err)
+			return nil, http.StatusServiceUnavailable, err
+		}
+
+		th := state.Thresholds{
+			MinSamples:               s.cfg.State.MinSamples,
+			HighConfidenceMinSamples: s.cfg.State.HighConfidenceMinSamples,
+			OperativeMaxRTT:          s.cfg.State.OperativeMaxRTT,
+			JitterElevated:           s.cfg.State.JitterElevated,
+			DegradedMinRTT:           s.cfg.State.DegradedMinRTT,
+			DegradedMaxSuccess:       s.cfg.State.DegradedMaxSuccess,
+			ProbableAffectMinSamples: s.cfg.State.ProbableAffectMinSamples,
+		}
+
+		type cellJSON struct {
+			H string  `json:"h"`
+			X float64 `json:"x"`
+			Y float64 `json:"y"`
+			N int     `json:"n"`
+			R float64 `json:"r"`
+			J float64 `json:"j"`
+			Q float64 `json:"q"`
+			O string  `json:"o"`
+			S string  `json:"s"`
+			C string  `json:"c"`
+			T int64   `json:"t"`
+			P int     `json:"p"` // sitios móviles oficiales en la celda
+		}
+
+		out := make([]cellJSON, 0, len(aggs))
+		for _, a := range aggs {
+			lat, lon, err := s.cells.CellCenter(a.Cell)
+			if err != nil {
+				continue
+			}
+			res := state.Classify(state.Input{
+				SampleCount:      a.Count,
+				MedianRTT:        a.MedianRTT,
+				Jitter:           a.MedianJitter,
+				SuccessRatio:     a.SuccessRatio,
+				BaselineExpected: siteCounts[a.Cell] > 0,
+			}, th)
+			out = append(out, cellJSON{
+				H: a.Cell, X: round5(lon), Y: round5(lat), N: a.Count,
+				R: round1(a.MedianRTT), J: round1(a.MedianJitter), Q: round3(a.SuccessRatio),
+				O: a.TopOperator, S: res.State, C: res.Confidence,
+				T: a.LastObserved.Unix(), P: siteCounts[a.Cell],
+			})
+		}
+		body, err := json.Marshal(out)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
 		return
 	}
-	sum := sha256.Sum256(body)
-	etag := `"` + hex.EncodeToString(sum[:8]) + `"`
-	w.Header().Set("ETag", etag)
-	if r.Header.Get("If-None-Match") == etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", win.maxAge))
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(body)
 }
 
 func (s *Server) handleSites(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/cells", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	f, _, ok := parseCellFilter(r, s.cfg)
@@ -433,31 +509,44 @@ func (s *Server) handleSites(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad bbox", http.StatusBadRequest)
 		return
 	}
-	sites, err := s.store.Sites(r.Context(), f)
-	if err != nil {
-		http.Error(w, "storage error", http.StatusServiceUnavailable)
+	key := cacheKey("sites",
+		strconv.FormatFloat(f.MinLon, 'f', 6, 64),
+		strconv.FormatFloat(f.MinLat, 'f', 6, 64),
+		strconv.FormatFloat(f.MaxLon, 'f', 6, 64),
+		strconv.FormatFloat(f.MaxLat, 'f', 6, 64),
+	)
+	if handled, status := s.serveCachedJSON(w, r, key, time.Hour, "public, max-age=3600", func() ([]byte, int, error) {
+		sites, err := s.store.Sites(r.Context(), f)
+		if err != nil {
+			return nil, http.StatusServiceUnavailable, err
+		}
+		type siteJSON struct {
+			X  float64 `json:"x"`
+			Y  float64 `json:"y"`
+			O  string  `json:"o"`
+			Nd string  `json:"nd"`
+			Ad string  `json:"ad"`
+		}
+		out := make([]siteJSON, 0, len(sites))
+		for _, st := range sites {
+			out = append(out, siteJSON{X: round5(st.Lon), Y: round5(st.Lat), O: st.Operator,
+				Nd: st.Neighborhood, Ad: st.Address})
+		}
+		body, err := json.Marshal(out)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
 		return
 	}
-	type siteJSON struct {
-		X    float64 `json:"x"`
-		Y    float64 `json:"y"`
-		O    string  `json:"o"`
-		Nd   string  `json:"nd"`
-		Ad   string  `json:"ad"`
-	}
-	out := make([]siteJSON, 0, len(sites))
-	for _, st := range sites {
-		out = append(out, siteJSON{X: round5(st.Lon), Y: round5(st.Lat), O: st.Operator,
-			Nd: st.Neighborhood, Ad: st.Address})
-	}
-	body, err := json.Marshal(out)
-	if err != nil {
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(body)
 }
 
 // parseCellFilter valida bbox/operator/window y devuelve un CellFilter.
@@ -515,48 +604,65 @@ func parseCellFilter(r *http.Request, cfg config.Config) (store.CellFilter, wind
 // Filtros: municipality (substring), operator, technology.
 func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/cells", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
-	rows, err := s.store.Coverage(r.Context(),
-		strings.TrimSpace(r.URL.Query().Get("municipality")),
-		strings.TrimSpace(r.URL.Query().Get("operator")),
-		strings.TrimSpace(r.URL.Query().Get("technology")))
-	if err != nil {
-		slog.Error("coverage", "err", err)
-		http.Error(w, "storage error", http.StatusServiceUnavailable)
+	municipality := strings.TrimSpace(r.URL.Query().Get("municipality"))
+	operator := strings.TrimSpace(r.URL.Query().Get("operator"))
+	technology := strings.TrimSpace(r.URL.Query().Get("technology"))
+	key := cacheKey("coverage", strings.ToLower(municipality), strings.ToLower(operator), strings.ToLower(technology))
+	if handled, status := s.serveCachedJSON(w, r, key, time.Hour, "public, max-age=3600", func() ([]byte, int, error) {
+		rows, err := s.store.Coverage(r.Context(), municipality, operator, technology)
+		if err != nil {
+			slog.Error("coverage", "err", err)
+			return nil, http.StatusServiceUnavailable, err
+		}
+		body, err := json.Marshal(rows)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
 		return
 	}
-	body, err := json.Marshal(rows)
-	if err != nil {
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(body)
 }
 
 // handleCoverageSites expone el número oficial de sitios por operador y municipio.
 func (s *Server) handleCoverageSites(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/cells", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
-	rows, err := s.store.OfficialSites(r.Context(), strings.TrimSpace(r.URL.Query().Get("municipality")))
-	if err != nil {
-		slog.Error("officialSites", "err", err)
-		http.Error(w, "storage error", http.StatusServiceUnavailable)
+	municipality := strings.TrimSpace(r.URL.Query().Get("municipality"))
+	key := cacheKey("coverage-sites", strings.ToLower(municipality))
+	if handled, status := s.serveCachedJSON(w, r, key, time.Hour, "public, max-age=3600", func() ([]byte, int, error) {
+		rows, err := s.store.OfficialSites(r.Context(), municipality)
+		if err != nil {
+			slog.Error("officialSites", "err", err)
+			return nil, http.StatusServiceUnavailable, err
+		}
+		body, err := json.Marshal(rows)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
 		return
 	}
-	body, err := json.Marshal(rows)
-	if err != nil {
-		http.Error(w, "error", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(body)
 }
 
 // ---- Recursos humanitarios ----
@@ -570,10 +676,14 @@ var resourceKinds = map[string]bool{
 
 func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/cells", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	kind := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("kind")))
+	if kind != "" && !resourceKinds[kind] {
+		http.Error(w, "bad kind", http.StatusBadRequest)
+		return
+	}
 	f := store.CellFilter{}
 	if bbox := r.URL.Query().Get("bbox"); bbox != "" {
 		parts := strings.Split(bbox, ",")
@@ -592,40 +702,63 @@ func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 		}
 		f.MinLon, f.MinLat, f.MaxLon, f.MaxLat = vals[0], vals[1], vals[2], vals[3]
 	}
-	res, err := s.store.Resources(r.Context(), f, kind)
-	if err != nil {
-		http.Error(w, "storage error", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Filter out unapproved resources for non-admin users
-	adminkey := r.URL.Query().Get("adminkey")
-	expected := s.cfg.Port
-	if os.Getenv("ADMIN_KEY") != "" {
-		expected = os.Getenv("ADMIN_KEY")
-	}
-	isAdmin := adminkey != "" && adminkey == expected
-
-	var filtered []store.Resource
-	for _, resItem := range res {
-		if isAdmin || resItem.Status == "approved" {
-			filtered = append(filtered, resItem)
+	isAdmin := s.adminAllowed(r)
+	if isAdmin {
+		res, err := s.store.Resources(r.Context(), f, kind)
+		if err != nil {
+			http.Error(w, "storage error", http.StatusServiceUnavailable)
+			return
 		}
-	}
-
-	body, err := json.Marshal(filtered)
-	if err != nil {
-		http.Error(w, "error", http.StatusInternalServerError)
+		body, err := json.Marshal(res)
+		if err != nil {
+			http.Error(w, "error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Write(body)
 		return
 	}
-	w.Header().Set("Cache-Control", "public, max-age=60")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(body)
+
+	key := cacheKey("resources",
+		kind,
+		strconv.FormatFloat(f.MinLon, 'f', 6, 64),
+		strconv.FormatFloat(f.MinLat, 'f', 6, 64),
+		strconv.FormatFloat(f.MaxLon, 'f', 6, 64),
+		strconv.FormatFloat(f.MaxLat, 'f', 6, 64),
+		"public",
+	)
+	if handled, status := s.serveCachedJSON(w, r, key, time.Minute, "public, max-age=60", func() ([]byte, int, error) {
+		res, err := s.store.Resources(r.Context(), f, kind)
+		if err != nil {
+			return nil, http.StatusServiceUnavailable, err
+		}
+		var filtered []store.Resource
+		for _, resItem := range res {
+			if resItem.Status == "approved" {
+				filtered = append(filtered, resItem)
+			}
+		}
+		body, err := json.Marshal(filtered)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
+		return
+	}
 }
 
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/report", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	var body struct {
@@ -673,13 +806,14 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "storage error", http.StatusServiceUnavailable)
 		return
 	}
+	s.invalidateCaches()
 	w.Header().Set("X-Resource-ID", strconv.FormatInt(id, 10))
 	w.WriteHeader(http.StatusCreated)
 }
 
 func (s *Server) handleUpdateResourceDetails(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/update", r) {
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		tooManyRequests(w, time.Minute)
 		return
 	}
 	var body struct {
@@ -695,21 +829,16 @@ func (s *Server) handleUpdateResourceDetails(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	s.invalidateCaches()
 	w.WriteHeader(http.StatusNoContent)
 }
 
-
 func (s *Server) handleModerateResource(w http.ResponseWriter, r *http.Request) {
-	// Verificar token de administrador en cabecera o query string
-	token := r.URL.Query().Get("adminkey")
-	if token == "" {
-		token = r.Header.Get("X-Admin-Key")
+	if !s.allow("/update", r) {
+		tooManyRequests(w, time.Minute)
+		return
 	}
-	expected := s.cfg.Port // Usamos el puerto o variable como fallback por defecto si no hay ADMIN_KEY
-	if os.Getenv("ADMIN_KEY") != "" {
-		expected = os.Getenv("ADMIN_KEY")
-	}
-	if token != expected {
+	if !s.adminAllowed(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -731,6 +860,7 @@ func (s *Server) handleModerateResource(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	s.invalidateCaches()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -750,28 +880,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; connect-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob: https://*.openstreetmap.org https://tile.openstreetmap.org https://*.tile.openstreetmap.org; object-src 'none'; base-uri 'self'; worker-src 'self' blob:")
 	w.Header().Set("Cache-Control", "no-cache")
-
-	token := r.URL.Query().Get("adminkey")
-	expected := s.cfg.Port
-	if os.Getenv("ADMIN_KEY") != "" {
-		expected = os.Getenv("ADMIN_KEY")
-	}
-
-	htmlContent := string(web.MapHTML)
-	if token == expected && token != "" {
-		// Inyectar marca de admin y la interfaz en el HTML devuelto por el servidor
-		injection := fmt.Sprintf("<script>window.IS_ADMIN = true; window.ADMIN_KEY = %q;</script>", token)
-		htmlContent = strings.Replace(htmlContent, "</body>", injection+"</body>", 1)
-		
-		adminPanel := `<div id="admin-panel" style="background:#152c4e;border-radius:8px;padding:12px;font-size:12px">
-    <h2>Moderación de Ayudas (Admin Local)</h2>
-    <p class="note">Haz click en un centro de ayuda en el mapa (puntos naranjas) para ver sus detalles y cambiar su estado.</p>
-  </div>`
-		htmlContent = strings.Replace(htmlContent, "<!-- ADMIN_PANEL_PLACEHOLDER -->", adminPanel, 1)
-	}
-
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(htmlContent))
+	w.Write(web.MapHTML)
 }
 
 func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {

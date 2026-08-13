@@ -1,4 +1,48 @@
 "use strict";
+
+function clientFingerprintSeed() {
+  var nav = typeof navigator !== "undefined" ? navigator : {};
+  var conn = nav.connection || nav.mozConnection || nav.webkitConnection || null;
+  var screenPart = "";
+  if (typeof screen !== "undefined") {
+    screenPart = [screen.width || 0, screen.height || 0, screen.colorDepth || 0].join("x");
+  }
+  var tz = "";
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (e) {}
+  return [
+    nav.userAgent || "",
+    nav.language || "",
+    nav.platform || "",
+    tz,
+    screenPart,
+    String(nav.hardwareConcurrency || 0),
+    String(nav.deviceMemory || 0),
+    conn ? (conn.effectiveType || "") : "",
+    conn ? String(conn.saveData ? 1 : 0) : "0"
+  ].join("|");
+}
+
+function fnv1a32(str) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) >>> 0) + ((h << 4) >>> 0) + ((h << 7) >>> 0) + ((h << 8) >>> 0) + ((h << 24) >>> 0)) >>> 0;
+  }
+  return ("00000000" + h.toString(16)).slice(-8);
+}
+
+var CLIENT_FINGERPRINT = fnv1a32(clientFingerprintSeed());
+
+function apiFetch(input, init) {
+  init = init || {};
+  var headers = new Headers(init.headers || {});
+  headers.set("X-Client-Fingerprint", CLIENT_FINGERPRINT);
+  init.headers = headers;
+  return fetch(input, init);
+}
+
 (function () {
   var map = L.map("map", { zoomControl: false }).setView([4.57, -74.07], 6);
   L.control.zoom({ position: "topright" }).addTo(map);
@@ -320,7 +364,7 @@
   // Update details in DB
   function pushDetailsUpdate(updatedDetails, successMsg) {
     if (!selectedResource) return;
-    fetch("/resources/update-details", {
+    apiFetch("/resources/update-details", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -529,7 +573,7 @@
       }
     };
 
-    fetch("/report", {
+    apiFetch("/report", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload)
@@ -633,7 +677,7 @@
     var op = document.getElementById("op").value;
     var win = document.getElementById("win").value;
     var u = "/cells?bbox=" + encodeURIComponent(bbox) + "&window=" + win + "&operator=" + encodeURIComponent(op);
-    fetch(u, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (cells) {
+    apiFetch(u, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (cells) {
       var fc = { type: "FeatureCollection", features: [] };
       cells.forEach(function (c) {
         if (!COLOR[c.s]) return;
@@ -649,7 +693,7 @@
   function loadSites() {
     var b = map.getBounds();
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
-    fetch("/sites?bbox=" + encodeURIComponent(bbox), { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (sites) {
+    apiFetch("/sites?bbox=" + encodeURIComponent(bbox), { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (sites) {
       var fc = { type: "FeatureCollection", features: sites.map(function (s) {
         return { type: "Feature", geometry: { type: "Point", coordinates: [s.x, s.y] },
           properties: { o: s.o, nd: s.nd, ad: s.ad } };
@@ -663,11 +707,8 @@
     var b = map.getBounds();
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
     var url = "/resources?bbox=" + encodeURIComponent(bbox);
-    if (window.IS_ADMIN && window.ADMIN_KEY) {
-      url += "&adminkey=" + encodeURIComponent(window.ADMIN_KEY);
-    }
-    fetch(url, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (resList) {
-      allResources = resList.filter(r => r.Status !== "rejected");
+    apiFetch(url, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (resList) {
+      allResources = resList.filter(function (r) { return r.Status === "approved"; });
       
       // Update UI elements
       renderReportList();
@@ -705,7 +746,7 @@
       var t0 = performance.now();
       var ac = new AbortController();
       var timer = setTimeout(function () { ac.abort(); }, timeout);
-      fetch(path, { cache: "no-store", signal: ac.signal })
+      apiFetch(path, { cache: "no-store", signal: ac.signal })
         .then(function (r) {
           clearTimeout(timer);
           res(performance.now() - t0);
@@ -792,7 +833,7 @@
       testPayload.sd = net.sd;
     }
 
-    fetch("/o", {
+    apiFetch("/o", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(testPayload)
@@ -823,7 +864,7 @@
       testPayload.c = val;
       
       if (testObsId) {
-        fetch("/o/update", {
+        apiFetch("/o/update", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id: testObsId, c: val })
@@ -855,4 +896,3 @@
   setInterval(refresh, 60000);
   setTimeout(function() { map.invalidateSize(); }, 200);
 })();
-

@@ -20,6 +20,49 @@ var MIN_RATIO = 0.4;       // ratio mínimo para continuar con 1k/4k
 var obsId = null;
 var lastPayload = null;
 
+function clientFingerprintSeed() {
+  var nav = typeof navigator !== "undefined" ? navigator : {};
+  var conn = nav.connection || nav.mozConnection || nav.webkitConnection || null;
+  var screenPart = "";
+  if (typeof screen !== "undefined") {
+    screenPart = [screen.width || 0, screen.height || 0, screen.colorDepth || 0].join("x");
+  }
+  var tz = "";
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch (e) {}
+  return [
+    nav.userAgent || "",
+    nav.language || "",
+    nav.platform || "",
+    tz,
+    screenPart,
+    String(nav.hardwareConcurrency || 0),
+    String(nav.deviceMemory || 0),
+    conn ? (conn.effectiveType || "") : "",
+    conn ? String(conn.saveData ? 1 : 0) : "0"
+  ].join("|");
+}
+
+function fnv1a32(str) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h + ((h << 1) >>> 0) + ((h << 4) >>> 0) + ((h << 7) >>> 0) + ((h << 8) >>> 0) + ((h << 24) >>> 0)) >>> 0;
+  }
+  return ("00000000" + h.toString(16)).slice(-8);
+}
+
+var CLIENT_FINGERPRINT = fnv1a32(clientFingerprintSeed());
+
+function apiFetch(input, init) {
+  init = init || {};
+  var headers = new Headers(init.headers || {});
+  headers.set("X-Client-Fingerprint", CLIENT_FINGERPRINT);
+  init.headers = headers;
+  return fetch(input, init);
+}
+
 function setStatus(msg, cls) {
   var el = $("status");
   el.textContent = msg;
@@ -48,7 +91,7 @@ function probeOnce(path, timeout) {
     var t0 = performance.now();
     var ac = new AbortController();
     var timer = setTimeout(function () { ac.abort(); }, timeout || P_TIMEOUT);
-    fetch(path, { cache: "no-store", signal: ac.signal })
+    apiFetch(path, { cache: "no-store", signal: ac.signal })
       .then(function (r) {
         clearTimeout(timer);
         res(performance.now() - t0);
@@ -123,7 +166,7 @@ function buildPayload(gps, net, probes) {
 }
 
 function send(payload) {
-  return fetch("/o", {
+  return apiFetch("/o", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
@@ -187,7 +230,7 @@ async function syncPending() {
   if (!items.length) return;
   var body = items.map(function (o) { return o.p; });
   try {
-    var r = await fetch("/sync", {
+    var r = await apiFetch("/sync", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -203,7 +246,7 @@ async function syncPending() {
 
 function sendUpdate(payload) {
   if (obsId) {
-    fetch("/o/update", {
+    apiFetch("/o/update", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
@@ -316,7 +359,7 @@ function bindReportForm() {
       lat: lastPayload.x, lon: lastPayload.y, details: {}, nonce: nonce
     };
 
-    fetch("/report", {
+    apiFetch("/report", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
