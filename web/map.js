@@ -55,13 +55,18 @@
 
   var sitesLayer = L.geoJSON(null, {
     pointToLayer: function (f, latlng) {
-      return L.circleMarker(latlng, { radius: 5, color: "#fff", weight: 1.5, fillColor: "#8e44ad", fillOpacity: 0.85 });
+      var icon = L.divIcon({
+        className: 'pulsating-dot-container',
+        html: '<div class="pulsating-dot"></div>',
+        iconSize: [16, 16],
+        iconAnchor: [8, 8]
+      });
+      return L.marker(latlng, { icon: icon });
     },
     onEachFeature: function (f, layer) {
       var p = f.properties;
       var op = p.o ? (p.o.charAt(0).toUpperCase() + p.o.slice(1)) : "Desconocido";
-      layer.bindTooltip("Antena: " + op, { direction: "top" });
-      var html = "<b>Antena móvil registrada</b><br>Operador: " + op;
+      var html = "<b>Torre de Telefonía Móvil</b><br>Operador: " + op;
       if (p.nd) html += "<br>Barrio: " + p.nd;
       if (p.ad) html += "<br>Dirección: " + p.ad;
       layer.bindPopup(html);
@@ -587,14 +592,13 @@
 
     list.forEach(function (r, index) {
       var row = document.createElement("div");
-      row.style.display = "flex";
-      row.style.justifyContent = "space-between";
-      row.style.padding = "4px 0";
-      row.style.borderBottom = "1px dashed #28446c";
-      row.style.cursor = "pointer";
+      row.className = "operator-ranking-row";
       row.title = "Click para enfocar la mejor zona de este operador";
-      row.innerHTML = "<span>" + (index + 1) + ". " + r.name + " (" + r.samples + " obs)</span>" +
-                      "<span style='font-weight:bold; color:#ff9800;'>" + r.success + "% / " + r.rtt + "ms</span>";
+      row.innerHTML = "<div>" +
+                        "<span class='name'>" + (index + 1) + ". " + r.name + "</span>" +
+                        "<span class='samples'>(" + r.samples + " obs)</span>" +
+                      "</div>" +
+                      "<span class='stats'>" + r.success + "% / " + r.rtt + "ms</span>";
       
       row.addEventListener("click", function () {
         if (r.bestCell) {
@@ -658,7 +662,11 @@
   function loadResources() {
     var b = map.getBounds();
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
-    fetch("/resources?bbox=" + encodeURIComponent(bbox), { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (resList) {
+    var url = "/resources?bbox=" + encodeURIComponent(bbox);
+    if (window.IS_ADMIN && window.ADMIN_KEY) {
+      url += "&adminkey=" + encodeURIComponent(window.ADMIN_KEY);
+    }
+    fetch(url, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (resList) {
       allResources = resList.filter(r => r.Status !== "rejected");
       
       // Update UI elements

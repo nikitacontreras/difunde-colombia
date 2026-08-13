@@ -597,7 +597,23 @@ func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "storage error", http.StatusServiceUnavailable)
 		return
 	}
-	body, err := json.Marshal(res)
+
+	// Filter out unapproved resources for non-admin users
+	adminkey := r.URL.Query().Get("adminkey")
+	expected := s.cfg.Port
+	if os.Getenv("ADMIN_KEY") != "" {
+		expected = os.Getenv("ADMIN_KEY")
+	}
+	isAdmin := adminkey != "" && adminkey == expected
+
+	var filtered []store.Resource
+	for _, resItem := range res {
+		if isAdmin || resItem.Status == "approved" {
+			filtered = append(filtered, resItem)
+		}
+	}
+
+	body, err := json.Marshal(filtered)
 	if err != nil {
 		http.Error(w, "error", http.StatusInternalServerError)
 		return
