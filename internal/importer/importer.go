@@ -79,6 +79,13 @@ func ImportData(ctx context.Context, pool *pgxpool.Pool, dir string, h3res int) 
 			if err != nil {
 				fr.Error = err.Error()
 			}
+		case "opencellid":
+			n, sk, err := importOpenCellID(ctx, pool, path, h3res)
+			fr.Kind, fr.Rows, fr.Skipped = "opencellid", n, sk
+			rep.MobileSiteRows += n
+			if err != nil {
+				fr.Error = err.Error()
+			}
 		default:
 			fr.Kind = "ignored"
 		}
@@ -95,6 +102,8 @@ func classify(path string) string {
 		return "coverage"
 	case strings.Contains(name, "infraestructura"):
 		return "official_sites"
+	case strings.Contains(name, "opencellid") || strings.Contains(name, "732") || strings.HasPrefix(name, "732"):
+		return "opencellid"
 	case strings.Contains(name, "anten"):
 		return "mobile_sites"
 	case strings.Contains(base, "cali"):
