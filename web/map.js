@@ -162,6 +162,16 @@ function apiFetch(input, init) {
   // Render Sidebar List
   function renderReportList() {
     var filtered = allResources.filter(function (r) {
+      if (window.IS_ADMIN) {
+        if (currentTab === "pending") {
+          if (r.Status !== "pending" && r.Status !== "rejected") return false;
+        } else {
+          if (r.Status !== "approved") return false;
+        }
+      } else {
+        if (r.Status !== "approved") return false;
+      }
+
       // Tab filters
       if (currentTab === "acopios" && r.Kind !== "centro_acopio") return false;
       if (currentTab === "necesidades" && (r.Kind === "centro_acopio" || r.Kind === "refugio" || r.Kind === "olla_comunitaria")) return false;
@@ -195,15 +205,19 @@ function apiFetch(input, init) {
     });
 
     // Update Counts
-    document.getElementById("count-all").textContent = allResources.length;
-    document.getElementById("count-acopios").textContent = allResources.filter(r => r.Kind === "centro_acopio").length;
-    document.getElementById("count-necesidades").textContent = allResources.filter(r => r.Kind !== "centro_acopio" && r.Kind !== "refugio" && r.Kind !== "olla_comunitaria").length;
-    document.getElementById("count-ollas").textContent = allResources.filter(r => r.Kind === "olla_comunitaria").length;
-    document.getElementById("count-refugios").textContent = allResources.filter(r => r.Kind === "refugio").length;
+    var approvedList = allResources.filter(function (r) { return r.Status === "approved"; });
+    document.getElementById("count-all").textContent = approvedList.length;
+    document.getElementById("count-acopios").textContent = approvedList.filter(r => r.Kind === "centro_acopio").length;
+    document.getElementById("count-necesidades").textContent = approvedList.filter(r => r.Kind !== "centro_acopio" && r.Kind !== "refugio" && r.Kind !== "olla_comunitaria").length;
+    document.getElementById("count-ollas").textContent = approvedList.filter(r => r.Kind === "olla_comunitaria").length;
+    document.getElementById("count-refugios").textContent = approvedList.filter(r => r.Kind === "refugio").length;
+    if (window.IS_ADMIN && document.getElementById("count-pending")) {
+      document.getElementById("count-pending").textContent = allResources.filter(r => r.Status !== "approved").length;
+    }
     
     var headerCountEl = document.getElementById("header-active-count");
     if (headerCountEl) {
-      headerCountEl.textContent = allResources.length;
+      headerCountEl.textContent = approvedList.length;
     }
 
     var container = document.getElementById("report-items-container");
@@ -332,6 +346,25 @@ function apiFetch(input, init) {
       btnConfirm.style.opacity = 1;
       btnDisprove.disabled = false;
       btnDisprove.style.opacity = 1;
+    }
+
+    // Admin Moderation Panel
+    var adminPanel = document.getElementById("admin-moderation-panel");
+    if (adminPanel) {
+      if (window.IS_ADMIN) {
+        adminPanel.style.display = "flex";
+        var statusEl = document.getElementById("admin-resource-status");
+        statusEl.textContent = r.Status || "PENDIENTE";
+        if (r.Status === "approved") {
+          statusEl.style.color = "#10b981";
+        } else if (r.Status === "rejected") {
+          statusEl.style.color = "#ef4444";
+        } else {
+          statusEl.style.color = "#fbbf24";
+        }
+      } else {
+        adminPanel.style.display = "none";
+      }
     }
 
     // Open detail panel
@@ -876,6 +909,73 @@ function apiFetch(input, init) {
       toast("¡Gracias! Reporte de señal registrado.");
     });
   });
+
+  // Admin key initialization and events
+  var urlParams = new URLSearchParams(window.location.search);
+  var adminKey = urlParams.get("adminkey");
+  if (adminKey) {
+    window.IS_ADMIN = true;
+    window.ADMIN_KEY = adminKey;
+    
+    // Add PENDIENTES tab button dynamically
+    var tabsDiv = document.querySelector(".tabs-container");
+    if (tabsDiv) {
+      var btn = document.createElement("button");
+      btn.className = "tab-btn";
+      btn.setAttribute("data-tab", "pending");
+      btn.innerHTML = "PENDIENTES <span id='count-pending'>0</span>";
+      tabsDiv.appendChild(btn);
+      
+      btn.addEventListener("click", function() {
+        document.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
+        btn.classList.add("active");
+        currentTab = "pending";
+        renderReportList();
+      });
+    }
+
+    document.getElementById("btn-admin-approve").addEventListener("click", function() {
+      if (!selectedResource) return;
+      apiFetch("/o/moderate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: selectedResource.ID, status: "approved" })
+      }).then(function(r) {
+        if (r.ok) {
+          toast("Reporte aprobado con éxito.");
+          document.getElementById("admin-resource-status").textContent = "approved";
+          document.getElementById("admin-resource-status").style.color = "#10b981";
+          selectedResource.Status = "approved";
+          refresh();
+        } else {
+          toast("Error al moderar el reporte.");
+        }
+      }).catch(function() {
+        toast("Error de red al moderar el reporte.");
+      });
+    });
+
+    document.getElementById("btn-admin-reject").addEventListener("click", function() {
+      if (!selectedResource) return;
+      apiFetch("/o/moderate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: selectedResource.ID, status: "rejected" })
+      }).then(function(r) {
+        if (r.ok) {
+          toast("Reporte rechazado con éxito.");
+          document.getElementById("admin-resource-status").textContent = "rejected";
+          document.getElementById("admin-resource-status").style.color = "#ef4444";
+          selectedResource.Status = "rejected";
+          refresh();
+        } else {
+          toast("Error al moderar el reporte.");
+        }
+      }).catch(function() {
+        toast("Error de red al moderar el reporte.");
+      });
+    });
+  }
 
   function refresh() { loadCells(); loadSites(); loadResources(); }
   refresh();

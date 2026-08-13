@@ -978,7 +978,20 @@ html, body {
             <button class="btn-incorrect" id="btn-vote-disprove">× Esta información no es correcta</button>
           </div>
 
-          <!-- ADMIN_PANEL_PLACEHOLDER -->
+          <!-- Admin Moderation Panel -->
+          <div id="admin-moderation-panel" style="display:none; border-top:1px solid rgba(255,255,255,0.08); padding-top:16px; margin-top:16px; flex-direction:column; gap:12px;">
+            <div class="detail-section-title" style="color:#fbbf24; display:flex; align-items:center; gap:6px;">
+              <span style="display:inline-block; width:6px; height:6px; background:#fbbf24; border-radius:50%;"></span>
+              Moderación Administrativa
+            </div>
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">
+              Estado actual del reporte: <strong id="admin-resource-status" style="text-transform:uppercase;">PENDIENTE</strong>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button id="btn-admin-approve" style="flex:1; background:#10b981; border:none; color:white; font-weight:600; padding:12px; border-radius:8px; cursor:pointer; font-size:13px; transition:background 0.2s;">✓ Aprobar</button>
+              <button id="btn-admin-reject" style="flex:1; background:#ef4444; border:none; color:white; font-weight:600; padding:12px; border-radius:8px; cursor:pointer; font-size:13px; transition:background 0.2s;">× Rechazar</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
