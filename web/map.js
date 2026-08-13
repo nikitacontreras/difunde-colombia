@@ -741,7 +741,7 @@ function apiFetch(input, init) {
       sitesLayer.clearLayers();
       return;
     }
-    if (map.getZoom() < 13) {
+    if (map.getZoom() < 12) {
       sitesClusterGroup.clearLayers();
       sitesLayer.clearLayers();
       return;
@@ -1109,7 +1109,7 @@ function apiFetch(input, init) {
   document.getElementById("op").addEventListener("change", refresh);
   document.getElementById("win").addEventListener("change", refresh);
   document.getElementById("sites").addEventListener("change", function () {
-    if (this.checked && map.getZoom() < 13) {
+    if (this.checked && map.getZoom() < 12) {
       toast("Haz zoom para visualizar las antenas móviles");
     }
     loadSites();
