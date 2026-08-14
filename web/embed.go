@@ -5,7 +5,7 @@ import "embed"
 //go:embed index.html map.html admin.html map.js app.css app.js admin.css admin.js sw.js manifest.webmanifest cobertura_municipios.geojson
 var assets embed.FS
 
-// Cache invalidation token: 2026-08-14 09:10
+// Cache invalidation token: 2026-08-14 11:30
 var (
 	IndexHTML = mustRead("index.html")
 	MapHTML   = mustRead("map.html")

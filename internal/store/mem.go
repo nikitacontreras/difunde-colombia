@@ -351,6 +351,22 @@ func (m *MemStore) Resources(ctx context.Context, f CellFilter, kind string) ([]
 	return out, nil
 }
 
+func (m *MemStore) ResourceCounts(ctx context.Context) (ResourceCounts, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := ResourceCounts{ByKind: map[string]int{}}
+	for _, r := range m.resources {
+		switch r.Status {
+		case "approved":
+			out.Approved++
+			out.ByKind[r.Kind]++
+		case "pending":
+			out.Pending++
+		}
+	}
+	return out, nil
+}
+
 func (m *MemStore) InsertResource(ctx context.Context, r Resource) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

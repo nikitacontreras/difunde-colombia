@@ -133,6 +133,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /coverage/point", s.handleCoveragePoint)
 	s.mux.HandleFunc("GET /coverage/status", s.handleCoverageStatus)
 	s.mux.HandleFunc("GET /resources", s.handleResources)
+	s.mux.HandleFunc("GET /resources/counts", s.handleResourceCounts)
 	s.mux.HandleFunc("POST /report", s.handleReport)
 	s.mux.HandleFunc("POST /resources/update-details", s.handleUpdateResourceDetails)
 	s.mux.HandleFunc("POST /resources/moderate", s.handleModerateResource)
@@ -1088,6 +1089,38 @@ func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		body, err := json.Marshal(filtered)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
+		return
+	}
+}
+
+func (s *Server) handleResourceCounts(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/cells", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	isAdmin := s.adminAllowed(r)
+	key := cacheKey("resources-counts", strconv.FormatBool(isAdmin))
+	if handled, status := s.serveCachedJSON(w, r, key, 30*time.Second, "public, max-age=30", func() ([]byte, int, error) {
+		counts, err := s.store.ResourceCounts(r.Context())
+		if err != nil {
+			return nil, http.StatusServiceUnavailable, err
+		}
+		if !isAdmin {
+			counts.Pending = 0
+		}
+		body, err := json.Marshal(counts)
 		if err != nil {
 			return nil, http.StatusInternalServerError, err
 		}

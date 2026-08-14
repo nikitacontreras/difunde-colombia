@@ -407,6 +407,7 @@ function apiFetch(input, init) {
 
   var userLatLng = null;
   var allResources = [];
+  var resourceCounts = null;
   var currentTab = "all";
   var searchQuery = "";
   var selectedResource = null;
@@ -672,21 +673,37 @@ function apiFetch(input, init) {
       return new Date(b.ReportedAt).getTime() - new Date(a.ReportedAt).getTime();
     });
 
-    // Update Counts
+    // Update Counts (totales globales de la DB, independientes del viewport)
     var approvedList = allResources.filter(function (r) { return r.Status === "approved"; });
-    document.getElementById("count-all").textContent = approvedList.length;
-    document.getElementById("count-acopios").textContent = approvedList.filter(r => r.Kind === "centro_acopio").length;
-    document.getElementById("count-necesidades").textContent = approvedList.filter(r => r.Kind !== "centro_acopio" && r.Kind !== "refugio" && r.Kind !== "olla_comunitaria" && r.Kind !== "logistica").length;
-    document.getElementById("count-ollas").textContent = approvedList.filter(r => r.Kind === "olla_comunitaria").length;
-    document.getElementById("count-refugios").textContent = approvedList.filter(r => r.Kind === "refugio").length;
-    document.getElementById("count-logistica").textContent = approvedList.filter(r => r.Kind === "logistica").length;
+    var totalCount = approvedList.length;
+    var acopiosCount = approvedList.filter(r => r.Kind === "centro_acopio").length;
+    var ollasCount = approvedList.filter(r => r.Kind === "olla_comunitaria").length;
+    var refugiosCount = approvedList.filter(r => r.Kind === "refugio").length;
+    var logisticaCount = approvedList.filter(r => r.Kind === "logistica").length;
+    var pendingCount = allResources.filter(r => r.Status !== "approved").length;
+    if (resourceCounts) {
+      var bc = resourceCounts.by_kind || {};
+      totalCount = resourceCounts.approved;
+      acopiosCount = bc["centro_acopio"] || 0;
+      ollasCount = bc["olla_comunitaria"] || 0;
+      refugiosCount = bc["refugio"] || 0;
+      logisticaCount = bc["logistica"] || 0;
+      pendingCount = resourceCounts.pending || 0;
+    }
+    var necesidadesCount = totalCount - acopiosCount - refugiosCount - ollasCount - logisticaCount;
+    document.getElementById("count-all").textContent = totalCount;
+    document.getElementById("count-acopios").textContent = acopiosCount;
+    document.getElementById("count-necesidades").textContent = necesidadesCount;
+    document.getElementById("count-ollas").textContent = ollasCount;
+    document.getElementById("count-refugios").textContent = refugiosCount;
+    document.getElementById("count-logistica").textContent = logisticaCount;
     if (window.IS_ADMIN && document.getElementById("count-pending")) {
-      document.getElementById("count-pending").textContent = allResources.filter(r => r.Status !== "approved").length;
+      document.getElementById("count-pending").textContent = pendingCount;
     }
     
     var headerCountEl = document.getElementById("header-active-count");
     if (headerCountEl) {
-      headerCountEl.textContent = approvedList.length;
+      headerCountEl.textContent = totalCount;
     }
 
     var container = document.getElementById("report-items-container");
@@ -1476,6 +1493,13 @@ function apiFetch(input, init) {
     }).catch(function () {});
   }
 
+  function loadResourceCounts() {
+    apiFetch("/resources/counts", { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (counts) {
+      resourceCounts = counts;
+      renderReportList();
+    }).catch(function () {});
+  }
+
   // Connectivity Test Card Logic inside Map
   var testObsId = null;
   var testPayload = null;
@@ -1761,6 +1785,7 @@ function apiFetch(input, init) {
 
   refresh();
   loadCoverageCatalog();
+  loadResourceCounts();
   map.on("moveend", scheduleRefresh);
 
   // Disclaimer and auto-run logic

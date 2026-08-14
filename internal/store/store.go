@@ -154,6 +154,14 @@ type Resource struct {
 	ReportedAt    time.Time
 }
 
+// ResourceCounts agrega los totales globales de recursos aprobados por
+// kind y el número de pendientes; independiente del viewport del mapa.
+type ResourceCounts struct {
+	Approved int            `json:"approved"`
+	Pending  int            `json:"pending,omitempty"`
+	ByKind   map[string]int `json:"by_kind"`
+}
+
 // CoverageRow es el snapshot oficial de cobertura reportada por
 // operador/municipio/tecnología (último trimestre importado).
 type CoverageRow struct {
@@ -246,6 +254,7 @@ type Store interface {
 	Sites(ctx context.Context, f CellFilter) ([]Site, error)
 	SitesByCell(ctx context.Context) (map[string]int, error)
 	Resources(ctx context.Context, f CellFilter, kind string) ([]Resource, error)
+	ResourceCounts(ctx context.Context) (ResourceCounts, error)
 	InsertResource(ctx context.Context, r Resource) (int64, error)
 	UpdateResource(ctx context.Context, r Resource) error
 	UpdateResourceStatus(ctx context.Context, id int64, status string) error

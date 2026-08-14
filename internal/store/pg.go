@@ -451,6 +451,34 @@ func (s *PGStore) Resources(ctx context.Context, f CellFilter, kind string) ([]R
 	return out, rows.Err()
 }
 
+func (s *PGStore) ResourceCounts(ctx context.Context) (ResourceCounts, error) {
+	var out ResourceCounts
+	out.ByKind = map[string]int{}
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE status = 'approved')::int,
+			COUNT(*) FILTER (WHERE status = 'pending')::int
+		FROM resources`).Scan(&out.Approved, &out.Pending); err != nil {
+		return out, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT kind, COUNT(*)::int FROM resources
+		WHERE status = 'approved' GROUP BY kind`)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind string
+		var n int
+		if err := rows.Scan(&kind, &n); err != nil {
+			return out, err
+		}
+		out.ByKind[kind] = n
+	}
+	return out, rows.Err()
+}
+
 func (s *PGStore) InsertResource(ctx context.Context, r Resource) (int64, error) {
 	status := r.Status
 	if status == "" {
