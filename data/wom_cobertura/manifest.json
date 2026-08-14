@@ -1,0 +1,667 @@
+{
+  "coverage_csv": {
+    "columns": [],
+    "error": "HTTP Error 404: Not Found",
+    "path": "raw/coverage.csv.error.json",
+    "row_count": 0,
+    "status": "error",
+    "url": "https://movilpt.co/media/coveragemap/Coveragemap.csv"
+  },
+  "downloaded": {
+    "page_html": "raw/page.html"
+  },
+  "generated_at": "2026-08-14T03:31:16.443847+00:00",
+  "layers": [
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-76.36306686915043 7.3383598310333396",
+        "upper": "-72.20168339647923 11.786632662619462"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertu:Q2_2026_Cov_NAL_4G_W29_Costa",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Costa/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "Q2-2026_Cov_NAL_4G_W29_Costa"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-81.73554715079136 0.870300153276713",
+        "upper": "-67.4792363595464 13.394228463595963"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertu:Q2_2026_Cov_NAL_4G_W29_Centro",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Centro/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "Q2-2026_Cov_NAL_4G_W29_Centro"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-81.70882552233012 -4.226329951162936",
+        "upper": "-67.47869369130012 13.378849294680274"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertu:4G",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:4G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "4G"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-74.6413688570297 4.564603039728473",
+        "upper": "-70.18577540753053 8.649512437133893"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Oriente/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "Q2-2026_Cov_NAL_4G_W29_Oriente"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-77.32823674570614 4.2009067332561445",
+        "upper": "-73.88133560560743 8.527146616133793"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Noroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "Q2-2026_Cov_NAL_4G_W29_Noroc"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-81.73533841472509 -4.227582586776769",
+        "upper": "-67.05416671295926 13.394328259721332"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertura3G:3G",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:3G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "3G"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-78.83260354126341 0.3229884913882295",
+        "upper": "-75.62355970085979 4.941245267429712"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Cov_NAL_4G_W29_Suroc/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "Q2-2026_Cov_NAL_4G_W29_Suroc"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-78.78230817290245 0.26232887970695873",
+        "upper": "-66.9710511548868 12.271168343558346"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertu:Q2_2026_Coverage_Jungle_4G_W29",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertu:Q2_2026_Coverage_Jungle_4G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "Q2-2026_Coverage_Jungle_4G_W29"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-81.70882552233 -4.2263299511629",
+        "upper": "-67.4786936913 13.3788492946802"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertura5G:5G",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura5G:5G/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "5G"
+    },
+    {
+      "abstract": "",
+      "bbox": {
+        "lower": "-81.73545808639403 -4.227582187218618",
+        "upper": "-69.9260574813043 13.394845878057705"
+      },
+      "formats": [
+        "image/png8"
+      ],
+      "identifier": "cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29",
+      "resource_urls": [
+        {
+          "format": "image/png8",
+          "resource_type": "tile",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}?format=image/png8"
+        },
+        {
+          "format": "text/plain",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/plain"
+        },
+        {
+          "format": "application/vnd.ogc.gml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "application/vnd.ogc.gml/3.1.1",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/vnd.ogc.gml/3.1.1"
+        },
+        {
+          "format": "text/xml",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/xml"
+        },
+        {
+          "format": "text/html",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=text/html"
+        },
+        {
+          "format": "application/json",
+          "resource_type": "FeatureInfo",
+          "template": "http://mi.movilpt.co/geoserverwom/gwc/service/wmts/rest/cobertura3G:Q2_2026_Cov_NAL_Sanand_3G_W29/{style}/{TileMatrixSet}/{TileMatrix}/{TileRow}/{TileCol}/{J}/{I}?format=application/json"
+        }
+      ],
+      "styles": [
+        {
+          "identifier": "",
+          "is_default": true
+        }
+      ],
+      "tile_matrix_sets": [
+        "EPSG:4326"
+      ],
+      "title": "Q2-2026_Cov_NAL_Sanand_3G_W29"
+    }
+  ],
+  "notes": [
+    "WOM publica cobertura por WMTS/GeoServer, no como KML.",
+    "El CSV de cobertura que referencia la página puede cambiar o estar caído; si no responde, el scraper deja el error guardado y sigue con WMTS."
+  ],
+  "page_update": "Agosto 14 de 2026",
+  "source": {
+    "csv_url": "https://movilpt.co/media/coveragemap/Coveragemap.csv",
+    "public_page": "https://movilpt.co/cobertura",
+    "wmts_url": "https://mi.movilpt.co/geoserverwom/gwc/service/wmts"
+  },
+  "summary": {
+    "coverage_layers": 10,
+    "helper_layers": 1,
+    "tile_matrix_sets": 5
+  },
+  "wmts": {
+    "capabilities_path": "raw/wmts_getcapabilities.xml",
+    "capabilities_url": "https://mi.movilpt.co/geoserverwom/gwc/service/wmts?REQUEST=GetCapabilities&SERVICE=WMTS",
+    "layers_path": "raw/wmts_layers.json",
+    "url": "https://mi.movilpt.co/geoserverwom/gwc/service/wmts"
+  }
+}

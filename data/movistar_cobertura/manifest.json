@@ -1,0 +1,223 @@
+{
+  "download_tiles": false,
+  "generated_at": "2026-08-14T02:08:10.172603+00:00",
+  "source": {
+    "api_base": "https://movistar-mapas-dot-modified-wonder-87620.appspot.com/api/maps",
+    "embed_page": "https://movistar-mapas-dot-modified-wonder-87620.appspot.com/mapa-cobertura",
+    "public_page": "https://www.movistar.com.co/mapa-de-cobertura-movil"
+  },
+  "technologies": [
+    {
+      "active_locality_cities": 17,
+      "call_kml_path": "raw/technologies/GSM/call-kml.json",
+      "call_kml_urls": [
+        "https://storage.googleapis.com/movistar-public/movistar-formularios/mapas-cobertura/GSM/Nacional/2025_08_15/doc.kml"
+      ],
+      "cities": 1274,
+      "departments": 33,
+      "download_tiles": false,
+      "id": "GSM",
+      "kml_manifest_path": "raw/technologies/GSM/kml-manifest.json",
+      "legend": [
+        {
+          "descripcion": "2G: RX Level",
+          "descripcion_leyenda": "Excelente",
+          "id_tecno": "GSM",
+          "nombre": "GSM 2G",
+          "rango": ">= -80"
+        },
+        {
+          "descripcion": "2G: RX Level",
+          "descripcion_leyenda": "Bueno",
+          "id_tecno": "GSM",
+          "nombre": "GSM 2G",
+          "rango": "-90 a -80"
+        },
+        {
+          "descripcion": "2G: RX Level",
+          "descripcion_leyenda": "Regular",
+          "id_tecno": "GSM",
+          "nombre": "GSM 2G",
+          "rango": "100 a -90"
+        },
+        {
+          "descripcion": "2G: RX Level",
+          "descripcion_leyenda": "Deficiente",
+          "id_tecno": "GSM",
+          "nombre": "GSM 2G",
+          "rango": "-105 a -100"
+        },
+        {
+          "descripcion": "2G: RX Level",
+          "descripcion_leyenda": "Sin cobertura",
+          "id_tecno": "GSM",
+          "nombre": "GSM 2G",
+          "rango": "< -105"
+        }
+      ],
+      "localities": 140,
+      "localities_path": "raw/technologies/GSM/localities.json",
+      "name": "GSM 2G",
+      "states_path": "raw/technologies/GSM/call-states.json"
+    },
+    {
+      "active_locality_cities": 17,
+      "call_kml_path": "raw/technologies/LTE/call-kml.json",
+      "call_kml_urls": [
+        "https://storage.googleapis.com/movistar-public/movistar-formularios/mapas-cobertura/LTE/Nacional/2026_08_04/doc.kml"
+      ],
+      "cities": 1274,
+      "departments": 33,
+      "download_tiles": false,
+      "id": "LTE",
+      "kml_manifest_path": "raw/technologies/LTE/kml-manifest.json",
+      "legend": [
+        {
+          "descripcion": "4G: RSRP",
+          "descripcion_leyenda": "Excelente",
+          "id_tecno": "LTE",
+          "nombre": "LTE 4G",
+          "rango": "> -90"
+        },
+        {
+          "descripcion": "4G: RSRP",
+          "descripcion_leyenda": "Bueno",
+          "id_tecno": "LTE",
+          "nombre": "LTE 4G",
+          "rango": "-100 a -90"
+        },
+        {
+          "descripcion": "4G: RSRP",
+          "descripcion_leyenda": "Regular",
+          "id_tecno": "LTE",
+          "nombre": "LTE 4G",
+          "rango": "-110 a -100"
+        },
+        {
+          "descripcion": "4G: RSRP",
+          "descripcion_leyenda": "Deficiente",
+          "id_tecno": "LTE",
+          "nombre": "LTE 4G",
+          "rango": "-115 a -110"
+        },
+        {
+          "descripcion": "4G: RSRP",
+          "descripcion_leyenda": "Sin cobertura",
+          "id_tecno": "LTE",
+          "nombre": "LTE 4G",
+          "rango": "< -115"
+        }
+      ],
+      "localities": 140,
+      "localities_path": "raw/technologies/LTE/localities.json",
+      "name": "LTE 4G",
+      "states_path": "raw/technologies/LTE/call-states.json"
+    },
+    {
+      "active_locality_cities": 17,
+      "call_kml_path": "raw/technologies/RSSI/call-kml.json",
+      "call_kml_urls": [
+        "https://storage.googleapis.com/movistar-public/movistar-formularios/mapas-cobertura/RSSI/Nacional/2026_08_04/doc.kml"
+      ],
+      "cities": 1273,
+      "departments": 33,
+      "download_tiles": false,
+      "id": "RSSI",
+      "kml_manifest_path": "raw/technologies/RSSI/kml-manifest.json",
+      "legend": [
+        {
+          "descripcion": "5G: RSSI",
+          "descripcion_leyenda": "Excelente",
+          "id_tecno": "RSSI",
+          "nombre": "RSSI 5G",
+          "rango": "≥-85"
+        },
+        {
+          "descripcion": "5G: RSSI",
+          "descripcion_leyenda": "Bueno",
+          "id_tecno": "RSSI",
+          "nombre": "RSSI 5G",
+          "rango": "-95 A -85"
+        },
+        {
+          "descripcion": "5G: RSSI",
+          "descripcion_leyenda": "Regular",
+          "id_tecno": "RSSI",
+          "nombre": "RSSI 5G",
+          "rango": "-105 A -95"
+        },
+        {
+          "descripcion": "5G: RSSI",
+          "descripcion_leyenda": "Deficiente",
+          "id_tecno": "RSSI",
+          "nombre": "RSSI 5G",
+          "rango": "110 A 105"
+        },
+        {
+          "descripcion": "5G: RSSI",
+          "descripcion_leyenda": "Sin cobertura",
+          "id_tecno": "RSSI",
+          "nombre": "RSSI 5G",
+          "rango": "≤-110"
+        }
+      ],
+      "localities": 110,
+      "localities_path": "raw/technologies/RSSI/localities.json",
+      "name": "RSSI 5G",
+      "states_path": "raw/technologies/RSSI/call-states.json"
+    },
+    {
+      "active_locality_cities": 17,
+      "call_kml_path": "raw/technologies/UMTS/call-kml.json",
+      "call_kml_urls": [
+        "https://storage.googleapis.com/movistar-public/movistar-formularios/mapas-cobertura/UMTS/Nacional/2026_08_04/doc.kml"
+      ],
+      "cities": 1274,
+      "departments": 33,
+      "download_tiles": false,
+      "id": "UMTS",
+      "kml_manifest_path": "raw/technologies/UMTS/kml-manifest.json",
+      "legend": [
+        {
+          "descripcion": "3G: RSCP",
+          "descripcion_leyenda": "Excelente",
+          "id_tecno": "UMTS",
+          "nombre": "UMTS 3G",
+          "rango": "> -85"
+        },
+        {
+          "descripcion": "3G: RSCP",
+          "descripcion_leyenda": "Bueno",
+          "id_tecno": "UMTS",
+          "nombre": "UMTS 3G",
+          "rango": "-95 a -85"
+        },
+        {
+          "descripcion": "3G: RSCP",
+          "descripcion_leyenda": "Regular",
+          "id_tecno": "UMTS",
+          "nombre": "UMTS 3G",
+          "rango": "-105 a -95"
+        },
+        {
+          "descripcion": "3G: RSCP",
+          "descripcion_leyenda": "Deficiente",
+          "id_tecno": "UMTS",
+          "nombre": "UMTS 3G",
+          "rango": "-110 a -105"
+        },
+        {
+          "descripcion": "3G: RSCP",
+          "descripcion_leyenda": "Sin cobertura",
+          "id_tecno": "UMTS",
+          "nombre": "UMTS 3G",
+          "rango": "< -110"
+        }
+      ],
+      "localities": 140,
+      "localities_path": "raw/technologies/UMTS/localities.json",
+      "name": "UMTS 3G",
+      "states_path": "raw/technologies/UMTS/call-states.json"
+    }
+  ]
+}
