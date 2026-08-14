@@ -3,7 +3,44 @@
    Precachea SOLO recursos críticos de la sonda (/). NO el mapa.
    Los probes (/p, /probe/*) se dejan pasar sin cache para no falsear mediciones. */
 var CORE = ["/", "/app.css", "/app.js", "/manifest.webmanifest"];
-var CACHE = "cdfd-core-v1";
+var CACHE = "cdfd-core-v2";
+
+self.addEventListener("push", function (e) {
+  var data = { title: "Colombia Difunde", body: "Sismo detectado por el SGC", url: "/map" };
+  try {
+    if (e.data) {
+      var d = e.data.json();
+      data.title = d.title || data.title;
+      data.body = d.body || data.body;
+      data.url = d.url || data.url;
+      data.tag = d.id || "sismo";
+    }
+  } catch (err) {}
+  e.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      tag: data.tag || "sismo",
+      renotify: true,
+      data: { url: data.url }
+    })
+  );
+});
+
+self.addEventListener("notificationclick", function (e) {
+  e.notification.close();
+  var url = (e.notification.data && e.notification.data.url) || "/map";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        if ("focus" in list[i]) {
+          list[i].focus();
+          return;
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});
 
 self.addEventListener("install", function (e) {
   e.waitUntil(

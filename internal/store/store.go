@@ -111,6 +111,31 @@ type OfficialSitesRow struct {
 	Tech5G       bool
 }
 
+// SismoEvent es un sismo del catálogo del SGC detectado por el polling.
+type SismoEvent struct {
+	ID         string    `json:"id"`
+	Mag        float64   `json:"mag"`
+	MagType    string    `json:"mag_type"`
+	Depth      float64   `json:"depth"`
+	Lat        float64   `json:"lat"`
+	Lon        float64   `json:"lon"`
+	Place      string    `json:"place"`
+	LocalTime  string    `json:"local_time"`
+	UTCTime    string    `json:"utc_time"`
+	EventType  string    `json:"event_type"`
+	Status     string    `json:"status"`
+	DetectedAt time.Time `json:"detected_at"`
+}
+
+// PushSubscription es una suscripción Web Push (endpoint + claves).
+type PushSubscription struct {
+	Endpoint  string    `json:"endpoint"`
+	P256DH    string    `json:"p256dh"`
+	Auth      string    `json:"auth"`
+	Device    string    `json:"device"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Store interface {
 	InsertObservation(ctx context.Context, o Observation) (int64, error)
 	UpdateObservation(ctx context.Context, id int64, callSignal, operatorUser *string) error
@@ -127,4 +152,14 @@ type Store interface {
 	// municipality se filtra como substring (case-insensitive); vacío = todo.
 	Coverage(ctx context.Context, municipality, operator, technology string) ([]CoverageRow, error)
 	OfficialSites(ctx context.Context, municipality string) ([]OfficialSitesRow, error)
+
+	// Sismos y notificaciones push.
+	// InsertSismoEvents guarda eventos nuevos (por id) y devuelve solo los insertados.
+	InsertSismoEvents(ctx context.Context, events []SismoEvent) ([]SismoEvent, error)
+	RecentSismos(ctx context.Context, limit int) ([]SismoEvent, error)
+	UpsertPushSubscription(ctx context.Context, sub PushSubscription) error
+	ListPushSubscriptions(ctx context.Context) ([]PushSubscription, error)
+	DeletePushSubscription(ctx context.Context, endpoint string) error
+	GetSetting(ctx context.Context, key string) (string, bool, error)
+	SetSetting(ctx context.Context, key, value string) error
 }

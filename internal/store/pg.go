@@ -389,6 +389,98 @@ func (s *PGStore) QueryMappings(ctx context.Context) ([]struct {
 	return out, rows.Err()
 }
 
+func (s *PGStore) InsertSismoEvents(ctx context.Context, events []SismoEvent) ([]SismoEvent, error) {
+	var inserted []SismoEvent
+	for _, e := range events {
+		tag, err := s.pool.Exec(ctx, `INSERT INTO sismo_events
+			(id, mag, mag_type, depth, lat, lon, place, local_time, utc_time, event_type, status)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			ON CONFLICT (id) DO NOTHING`,
+			e.ID, e.Mag, nilStr(e.MagType), e.Depth, e.Lat, e.Lon, nilStr(e.Place),
+			nilStr(e.LocalTime), nilStr(e.UTCTime), nilStr(e.EventType), nilStr(e.Status))
+		if err != nil {
+			return inserted, err
+		}
+		if tag.RowsAffected() > 0 {
+			inserted = append(inserted, e)
+		}
+	}
+	return inserted, nil
+}
+
+func (s *PGStore) RecentSismos(ctx context.Context, limit int) ([]SismoEvent, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, COALESCE(mag,0), COALESCE(mag_type,''), COALESCE(depth,0),
+			COALESCE(lat,0), COALESCE(lon,0), COALESCE(place,''), COALESCE(local_time,''),
+			COALESCE(utc_time,''), COALESCE(event_type,''), COALESCE(status,''), detected_at
+		FROM sismo_events ORDER BY detected_at DESC LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SismoEvent
+	for rows.Next() {
+		var e SismoEvent
+		if err := rows.Scan(&e.ID, &e.Mag, &e.MagType, &e.Depth, &e.Lat, &e.Lon,
+			&e.Place, &e.LocalTime, &e.UTCTime, &e.EventType, &e.Status, &e.DetectedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (s *PGStore) UpsertPushSubscription(ctx context.Context, sub PushSubscription) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO push_subscriptions (endpoint, p256dh, auth, device)
+		VALUES ($1,$2,$3,$4)
+		ON CONFLICT (endpoint) DO UPDATE SET
+			p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth,
+			device = COALESCE(EXCLUDED.device, push_subscriptions.device),
+			last_error = NULL, last_error_at = NULL`,
+		sub.Endpoint, sub.P256DH, sub.Auth, nilStr(sub.Device))
+	return err
+}
+
+func (s *PGStore) ListPushSubscriptions(ctx context.Context) ([]PushSubscription, error) {
+	rows, err := s.pool.Query(ctx, `SELECT endpoint, p256dh, auth, COALESCE(device,''), created_at
+		FROM push_subscriptions`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []PushSubscription
+	for rows.Next() {
+		var sub PushSubscription
+		if err := rows.Scan(&sub.Endpoint, &sub.P256DH, &sub.Auth, &sub.Device, &sub.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, sub)
+	}
+	return out, rows.Err()
+}
+
+func (s *PGStore) DeletePushSubscription(ctx context.Context, endpoint string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM push_subscriptions WHERE endpoint = $1`, endpoint)
+	return err
+}
+
+func (s *PGStore) GetSetting(ctx context.Context, key string) (string, bool, error) {
+	var value string
+	err := s.pool.QueryRow(ctx, `SELECT value FROM app_settings WHERE key = $1`, key).Scan(&value)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+func (s *PGStore) SetSetting(ctx context.Context, key, value string) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO app_settings (key, value) VALUES ($1,$2)
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, key, value)
+	return err
+}
+
 func nilStr(s string) any {
 	if s == "" {
 		return nil

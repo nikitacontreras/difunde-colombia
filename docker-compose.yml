@@ -30,6 +30,9 @@ services:
       H3_RESOLUTION: ${H3_RESOLUTION:-8}
       ASN_MAPPING_FROM_DB: "true"
       PORT: "8080"
+      # Confiar en el gateway/bridge de Docker para leer la IP real
+      # desde CF-Connecting-IP / X-Forwarded-For (Cloudflare -> Caddy -> contenedor).
+      TRUSTED_PROXIES: "127.0.0.1/32,::1/128,172.16.0.0/12"
     ports:
       - "8082:8080"
     volumes:

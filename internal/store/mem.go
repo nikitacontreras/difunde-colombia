@@ -22,11 +22,15 @@ type MemStore struct {
 	coverage    []CoverageRow
 	official    []OfficialSitesRow
 	validations map[string]bool
+	sismos      []SismoEvent
+	subs        []PushSubscription
+	settings    map[string]string
 }
 
 func NewMemStore() *MemStore {
 	return &MemStore{
 		validations: make(map[string]bool),
+		settings:    make(map[string]string),
 	}
 }
 
@@ -259,4 +263,84 @@ func (m *MemStore) SetBaseline(coverage []CoverageRow, official []OfficialSitesR
 	defer m.mu.Unlock()
 	m.coverage = coverage
 	m.official = official
+}
+
+func (m *MemStore) InsertSismoEvents(ctx context.Context, events []SismoEvent) ([]SismoEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := make(map[string]bool, len(m.sismos))
+	for _, e := range m.sismos {
+		seen[e.ID] = true
+	}
+	var inserted []SismoEvent
+	now := time.Now().UTC()
+	for _, e := range events {
+		if seen[e.ID] {
+			continue
+		}
+		seen[e.ID] = true
+		e.DetectedAt = now
+		m.sismos = append(m.sismos, e)
+		inserted = append(inserted, e)
+	}
+	return inserted, nil
+}
+
+func (m *MemStore) RecentSismos(ctx context.Context, limit int) ([]SismoEvent, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]SismoEvent, len(m.sismos))
+	copy(out, m.sismos)
+	sort.Slice(out, func(i, j int) bool { return out[i].DetectedAt.After(out[j].DetectedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (m *MemStore) UpsertPushSubscription(ctx context.Context, sub PushSubscription) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, s := range m.subs {
+		if s.Endpoint == sub.Endpoint {
+			m.subs[i] = sub
+			return nil
+		}
+	}
+	m.subs = append(m.subs, sub)
+	return nil
+}
+
+func (m *MemStore) ListPushSubscriptions(ctx context.Context) ([]PushSubscription, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]PushSubscription, len(m.subs))
+	copy(out, m.subs)
+	return out, nil
+}
+
+func (m *MemStore) DeletePushSubscription(ctx context.Context, endpoint string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, s := range m.subs {
+		if s.Endpoint == endpoint {
+			m.subs = append(m.subs[:i], m.subs[i+1:]...)
+			return nil
+		}
+	}
+	return nil
+}
+
+func (m *MemStore) GetSetting(ctx context.Context, key string) (string, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.settings[key]
+	return v, ok, nil
+}
+
+func (m *MemStore) SetSetting(ctx context.Context, key, value string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.settings[key] = value
+	return nil
 }

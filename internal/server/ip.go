@@ -12,7 +12,7 @@ import (
 //   - Dentro de trusted proxies: se acepta CF-Connecting-IP o X-Forwarded-For
 //     (tomando la IP no confiable más a la derecha).
 //
-// La IP se usa SOLO en memoria para ASN y rate limit; no se persiste ni se loguea.
+// La IP se usa para ASN/operador, rate limit y se persiste en observations.client_ip.
 func clientIP(r *http.Request, trusted []*net.IPNet) (netip.Addr, bool) {
 	host := r.RemoteAddr
 	if h, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {

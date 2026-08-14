@@ -950,6 +950,20 @@ html, body {
         </div>
       </div>
 
+      <!-- Sismos Alerts Card -->
+      <div id="sismos-alert-card" style="padding: 14px 16px; background: rgba(220, 38, 38, 0.08); border-bottom: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:12px; font-weight:600; color:var(--text-primary); display:flex; align-items:center; gap:8px;">
+            <span style="display:inline-block; width:8px; height:8px; background:#dc2626; border-radius:50%; box-shadow:0 0 8px #dc2626;"></span>
+            Alertas sísmicas (SGC)
+          </span>
+          <button id="btn-close-sismos-card" style="background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:16px; padding:0 4px;">×</button>
+        </div>
+        <p style="font-size:11px; color:var(--text-secondary); margin:0; line-height:1.4;">Recibe una notificación cuando se detecte un nuevo sismo en Colombia (fuente oficial SGC).</p>
+        <button id="btn-subscribe-sismos" style="background:var(--accent-color); border:none; color:white; font-size:11px; font-weight:600; padding:8px 12px; border-radius:6px; cursor:pointer; transition: background 0.2s;">ACTIVAR NOTIFICACIONES</button>
+        <div id="sismos-alert-status" style="font-size:11px; display:none; color:#fbbf24; margin-top:2px;"></div>
+      </div>
+
       <div class="report-list" id="report-items-container">
         <!-- Dynamic items -->
       </div>

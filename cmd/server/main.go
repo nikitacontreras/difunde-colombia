@@ -175,6 +175,10 @@ func runServe(cfg config.Config) error {
 	slog.Info("resolución H3", "res", cfg.H3Resolution, "desc", geo.ResolutionDescription(cfg.H3Resolution))
 
 	srv := server.New(cfg, st, ar, ops, cr)
+	if err := srv.SetupPush(ctx); err != nil {
+		return fmt.Errorf("claves VAPID: %w", err)
+	}
+	srv.StartSismoPolling(ctx)
 	httpSrv := &httpServer{cfg: cfg, handler: srv.Handler()}
 	return httpSrv.Run(ctx)
 }

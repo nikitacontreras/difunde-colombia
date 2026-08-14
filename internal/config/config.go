@@ -41,6 +41,21 @@ type Config struct {
 	State StateConfig
 	Rate  RateConfig
 	HTTP  HTTPConfig
+
+	// SismoPollInterval es cada cuánto se consulta el catálogo del SGC.
+	SismoPollInterval time.Duration
+	// SismoWindow es la ventana hacia atrás de cada consulta.
+	SismoWindow time.Duration
+	// SismoMinMag es la magnitud mínima para notificar (0 = todos).
+	SismoMinMag float64
+	// VAPIDPublicKey/VAPIDPrivateKey opcionales (Web Push). Si faltan, se
+	// generan una vez y se persisten en la DB.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	// VAPIDSubject es la URL/mailto identificador del servidor push.
+	VAPIDSubject string
+	// PushEnabled activa el envío de notificaciones.
+	PushEnabled bool
 }
 
 type ProbeConfig struct {
@@ -134,6 +149,13 @@ func Load() (Config, error) {
 			WriteTimeout: getenvDuration("HTTP_WRITE_TIMEOUT", 30*time.Second),
 			IdleTimeout:  getenvDuration("HTTP_IDLE_TIMEOUT", 60*time.Second),
 		},
+		SismoPollInterval: getenvDuration("SISMO_POLL_INTERVAL", 3*time.Minute),
+		SismoWindow:       getenvDuration("SISMO_WINDOW", 6*time.Hour),
+		SismoMinMag:       getenvFloat("SISMO_MIN_MAG", 0),
+		VAPIDPublicKey:    os.Getenv("VAPID_PUBLIC_KEY"),
+		VAPIDPrivateKey:   os.Getenv("VAPID_PRIVATE_KEY"),
+		VAPIDSubject:      getenv("VAPID_SUBJECT", "https://colombia.difunde.co"),
+		PushEnabled:       getenvBool("PUSH_ENABLED", true),
 	}
 
 	proxies, err := parseCIDRs(getenv("TRUSTED_PROXIES", "127.0.0.1/32,::1/128"))

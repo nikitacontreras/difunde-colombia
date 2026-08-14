@@ -67,6 +67,21 @@ func TestClientIPTrustedProxyAllTrusted(t *testing.T) {
 	}
 }
 
+func TestClientIPDockerBridgeGateway(t *testing.T) {
+	// Escenario producción: Cloudflare -> Caddy (host) -> contenedor Docker.
+	// El contenedor ve como peer el gateway del bridge (172.26.0.1, dentro de
+	// 172.16.0.0/12). Con el gateway confiado, debe usarse CF-Connecting-IP.
+	trusted := parseTestCIDRs(t, "127.0.0.1/32,::1/128,172.16.0.0/12")
+	req := newRequest("172.26.0.1:5432", map[string]string{
+		"CF-Connecting-IP":  "190.66.238.186",
+		"X-Forwarded-For":   "190.66.238.186, 172.68.12.3",
+	})
+	ip, ok := clientIP(req, trusted)
+	if !ok || ip != netip.MustParseAddr("190.66.238.186") {
+		t.Errorf("ip = %v ok=%v, want 190.66.238.186", ip, ok)
+	}
+}
+
 func TestClientIPBadRemote(t *testing.T) {
 	req := newRequest("not-an-ip", nil)
 	if _, ok := clientIP(req, nil); ok {

@@ -29,9 +29,16 @@ lote desde los datasets oficiales de CRC/Postdata y Cali.
 ### Cómo se usa la IP del cliente
 
 La IP se extrae de `RemoteAddr`, o de `X-Forwarded-For`/`CF-Connecting-IP` solo
-si el origen está en `TRUSTED_PROXIES` (CIDRs). La IP solo se usa en memoria
-para resolver ASN; no se persiste ni se loguea. Fuera de `TRUSTED_PROXIES`, las
-cabeceras son ignoradas para no confiar en valores spoofeados.
+si el origen está en `TRUSTED_PROXIES` (CIDRs). La IP se usa para resolver
+ASN/operador, rate limit y se persiste en `observations.client_ip`. Fuera de
+`TRUSTED_PROXIES`, las cabeceras son ignoradas para no confiar en valores
+spoofeados.
+
+> Detrás de Docker (proxy del host → contenedor), el peer que ve el contenedor
+> es el gateway del bridge (p. ej. `172.26.0.1`). Para que la IP real llegue a
+> `client_ip`, incluye el rango del bridge en `TRUSTED_PROXIES` (en
+> `docker-compose.yml` ya se confía `172.16.0.0/12`, que cubre todos los
+> subnets por defecto de Docker).
 
 ## Requisitos
 

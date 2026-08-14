@@ -125,8 +125,8 @@ function apiFetch(input, init) {
   // Custom Markers for Resources
   var resourceMarkersGroup = L.layerGroup().addTo(map);
 
-  // Pulsing sismo marker at San José del Palmar (4.9, -76.25)
-  var sismoLatLng = [4.9, -76.25];
+  // Pulsing sismo marker at the SGC epicenter of the 2026-08-10 earthquake (San José del Palmar)
+  var sismoLatLng = [4.99, -76.29];
   var sismoIcon = L.divIcon({
     className: 'pulsating-sismo-container',
     html: '<div class="pulsating-sismo-dot"></div>',
@@ -143,13 +143,13 @@ function apiFetch(input, init) {
     container.style.overflowY = "auto";
     container.innerHTML = "<b>Cargando historial de sismos...</b>";
 
-    fetch("/api/sismos?muni=27660")
+    fetch("/api/sismos?lat=4.99&lon=-76.29&rad=90&days=15")
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        var sismosList = data.features.filter(function (f) {
-          return f.attributes && f.attributes.ESP_FECHA_LONG;
-        }).sort(function (a, b) {
-          return b.attributes.ESP_FECHA_LONG - a.attributes.ESP_FECHA_LONG;
+        var sismosList = (data.events || []).slice(0).sort(function (a, b) {
+          var m = (b.mag || 0) - (a.mag || 0);
+          if (m !== 0) return m;
+          return (b.local_time || "").localeCompare(a.local_time || "");
         }).slice(0, 15);
 
         if (sismosList.length === 0) {
@@ -157,28 +157,24 @@ function apiFetch(input, init) {
           return;
         }
 
-        var html = "<b>Epicentro: San José del Palmar (Terremoto y Réplicas)</b><br><span style='font-size:11px;color:var(--text-secondary);'>Datos oficiales del Servicio Geológico Colombiano</span><hr style='border:0;border-top:1px solid var(--border-color);margin:8px 0;'>";
+        var html = "<b>Epicentro: San José del Palmar (Terremoto y Réplicas)</b><br><span style='font-size:11px;color:var(--text-secondary);'>" + (data.source || "Datos oficiales del Servicio Geológico Colombiano") + "</span><hr style='border:0;border-top:1px solid var(--border-color);margin:8px 0;'>";
         html += "<div style='display:flex;flex-direction:column;gap:6px;'>";
 
-        sismosList.forEach(function (f) {
-          var attr = f.attributes;
-          var mag = attr.ESP_MAGNITUD ? attr.ESP_MAGNITUD.toFixed(1) : "?";
-          var prof = attr.ESP_PROFUNDIDAD ? attr.ESP_PROFUNDIDAD.toFixed(0) : "?";
-          var dateVal = attr.ESP_FECHA_LONG;
-          var dateStr = "Fecha desconocida";
-          if (dateVal) {
-            var date = new Date(dateVal);
-            dateStr = date.toLocaleString('es-CO', { timeZone: 'America/Bogota', hour12: true });
-          }
-          
+        sismosList.forEach(function (e) {
+          var mag = e.mag != null ? e.mag.toFixed(1) : "?";
+          var magType = e.mag_type || "ML";
+          var prof = e.depth != null ? Math.round(e.depth) : "?";
+          var dist = e.dist_km != null ? " a " + e.dist_km + " km del epicentro" : "";
+          var dateStr = e.local_time || "Fecha desconocida";
+
           var color = "#16a34a"; // green
           if (parseFloat(mag) >= 5.0) color = "#dc2626"; // red
           else if (parseFloat(mag) >= 4.0) color = "#d97706"; // orange
 
           html += "<div style='background:rgba(255,255,255,0.05);padding:6px 8px;border-radius:6px;border-left:4px solid " + color + ";'>";
-          html += "<strong>Magnitud: " + mag + "</strong> M<sub>w</sub><br>";
-          html += "<span style='font-size:11px;color:var(--text-secondary);'>Profundidad: " + prof + " km</span><br>";
-          html += "<span style='font-size:11px;color:var(--text-secondary);'>" + dateStr + "</span>";
+          html += "<strong>Magnitud: " + mag + "</strong> <small>(" + magType + ")</small><br>";
+          html += "<span style='font-size:11px;color:var(--text-secondary);'>Profundidad: " + prof + " km" + dist + "</span><br>";
+          html += "<span style='font-size:11px;color:var(--text-secondary);'>" + dateStr + (e.place ? " · " + e.place : "") + "</span>";
           html += "</div>";
         });
         html += "</div>";
@@ -1201,4 +1197,113 @@ function apiFetch(input, init) {
 
   setInterval(refresh, 60000);
   setTimeout(function() { map.invalidateSize(); }, 200);
+
+  function initSismoAlerts() {
+    var card = document.getElementById("sismos-alert-card");
+    var btn = document.getElementById("btn-subscribe-sismos");
+    var status = document.getElementById("sismos-alert-status");
+    if (!card || !btn) return;
+
+    document.getElementById("btn-close-sismos-card").addEventListener("click", function() {
+      card.style.display = "none";
+    });
+
+    function setStatus(msg) {
+      status.textContent = msg;
+      status.style.display = "block";
+    }
+    function setActive(on) {
+      if (on) {
+        card.style.display = "none";
+      } else {
+        card.style.display = "flex";
+        btn.textContent = "ACTIVAR NOTIFICACIONES";
+        btn.style.background = "var(--accent-color)";
+      }
+    }
+
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      btn.disabled = true;
+      setStatus("Tu navegador no soporta notificaciones push.");
+      return;
+    }
+
+    function base64ToUint8Array(b64) {
+      var raw = atob(b64.replace(/_/g, "/").replace(/-/g, "+"));
+      var arr = new Uint8Array(raw.length);
+      for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+      return arr;
+    }
+
+    function b64Key(key) {
+      return btoa(String.fromCharCode.apply(null, new Uint8Array(key)));
+    }
+
+    function unsubscribe(sub) {
+      sub.unsubscribe().then(function() {
+        fetch("/api/push/unsubscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint })
+        }).catch(function() {});
+        setActive(false);
+        setStatus("Notificaciones desactivadas.");
+      }).catch(function() {
+        setStatus("No se pudieron desactivar las notificaciones.");
+      });
+    }
+
+    btn.addEventListener("click", function() {
+      btn.disabled = true;
+      navigator.serviceWorker.ready.then(function(reg) {
+        return reg.pushManager.getSubscription().then(function(existing) {
+          if (existing) { unsubscribe(existing); return null; }
+          return fetch("/api/push/vapid").then(function(r) { return r.json(); })
+            .then(function(v) {
+              if (!v.public_key) throw { code: "no_vapid" };
+              return reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: base64ToUint8Array(v.public_key)
+              });
+            });
+        });
+      }).then(function(sub) {
+        if (!sub) return;
+        return fetch("/api/push/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            endpoint: sub.endpoint,
+            keys: {
+              p256dh: b64Key(sub.getKey("p256dh")),
+              auth: b64Key(sub.getKey("auth"))
+            },
+            device: (navigator.userAgent.match(/Mobile/i) ? "Móvil" : "Escritorio") + " " + navigator.userAgent
+          })
+        }).then(function(r) {
+          if (!r.ok) throw { code: "server" };
+          setActive(true);
+        });
+      }).catch(function(e) {
+        if (e && e.code === "no_vapid") {
+          setStatus("El servidor aún no ofrece notificaciones.");
+        } else if (e && (e.name === "NotAllowedError" || e.code === 20)) {
+          setStatus("Permiso denegado. Habilítalo en la configuración del navegador.");
+        } else if (e && e.code === "server") {
+          setStatus("Error al guardar la suscripción. Intenta de nuevo.");
+        } else {
+          setStatus("Error al activar notificaciones. Intenta de nuevo.");
+        }
+      }).then(function() {
+        btn.disabled = false;
+      });
+    });
+
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(function() {});
+    navigator.serviceWorker.ready.then(function(reg) {
+      return reg.pushManager.getSubscription();
+    }).then(setActive).catch(function() {});
+  }
+
+  initSismoAlerts();
 })();

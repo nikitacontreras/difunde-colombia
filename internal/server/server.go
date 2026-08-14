@@ -12,14 +12,17 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"colombia-difunde/internal/asn"
 	"colombia-difunde/internal/config"
 	"colombia-difunde/internal/geo"
 	"colombia-difunde/internal/observe"
+	"colombia-difunde/internal/push"
 	"colombia-difunde/internal/state"
 	"colombia-difunde/internal/store"
 	"colombia-difunde/web"
@@ -38,6 +41,8 @@ type Server struct {
 
 	probe1k []byte
 	probe4k []byte
+
+	keys *push.KeyProvider
 }
 
 func New(cfg config.Config, st store.Store, ar asn.Resolver, ops *observe.OperatorResolver, cr geo.CellResolver) *Server {
@@ -53,13 +58,15 @@ func New(cfg config.Config, st store.Store, ar asn.Resolver, ops *observe.Operat
 		cache:   newResponseCache(256),
 		fp:      newFingerprintTracker(32, time.Hour),
 		limits: map[string]*rateLimiter{
-			"/p":      newRateLimiter(cfg.Rate.P, time.Minute),
-			"/probe":  newRateLimiter(cfg.Rate.Probe, time.Minute),
-			"/o":      newRateLimiter(cfg.Rate.Observe, time.Minute),
-			"/sync":   newRateLimiter(cfg.Rate.Sync, time.Minute),
-			"/cells":  newRateLimiter(cfg.Rate.Cells, time.Minute),
-			"/update": newRateLimiter(cfg.Rate.Update, time.Minute),
-			"/report": newRateLimiter(cfg.Rate.Report, time.Minute),
+			"/p":         newRateLimiter(cfg.Rate.P, time.Minute),
+			"/probe":     newRateLimiter(cfg.Rate.Probe, time.Minute),
+			"/o":         newRateLimiter(cfg.Rate.Observe, time.Minute),
+			"/sync":      newRateLimiter(cfg.Rate.Sync, time.Minute),
+			"/cells":     newRateLimiter(cfg.Rate.Cells, time.Minute),
+			"/update":    newRateLimiter(cfg.Rate.Update, time.Minute),
+			"/report":    newRateLimiter(cfg.Rate.Report, time.Minute),
+			"/subscribe": newRateLimiter(6, time.Minute),
+			"/recent":    newRateLimiter(30, time.Minute),
 		},
 	}
 	s.routes()
@@ -101,6 +108,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /resources/update-details", s.handleUpdateResourceDetails)
 	s.mux.HandleFunc("POST /resources/moderate", s.handleModerateResource)
 	s.mux.HandleFunc("GET /api/sismos", s.handleSismosProxy)
+	s.mux.HandleFunc("GET /api/sismos/recent", s.handleSismosRecent)
+	s.mux.HandleFunc("GET /api/push/vapid", s.handlePushVapid)
+	s.mux.HandleFunc("POST /api/push/subscribe", s.handlePushSubscribe)
+	s.mux.HandleFunc("POST /api/push/unsubscribe", s.handlePushUnsubscribe)
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 }
 
@@ -956,33 +967,489 @@ func round1(v float64) float64 { return float64(int(v*10)) / 10 }
 func round3(v float64) float64 { return float64(int(v*1000)) / 1000 }
 func round5(v float64) float64 { return float64(int(v*100000)) / 100000 }
 
-func (s *Server) handleSismosProxy(w http.ResponseWriter, r *http.Request) {
-	muni := r.URL.Query().Get("muni")
-	if muni == "" {
-		muni = "27660"
+const sgcCatalogURL = "https://apicatalogador.sgc.gov.co/api/events/search/"
+
+// sismoEvent es un sismo procesado del catálogo del SGC.
+type sismoEvent struct {
+	ID          string  `json:"id"`
+	Mag         float64 `json:"mag"`
+	MagType     string  `json:"mag_type"`
+	Depth       float64 `json:"depth"`
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
+	LocalTime   string  `json:"local_time"`
+	UTCTime     string  `json:"utc_time"`
+	Place       string  `json:"place"`
+	CloserTowns string  `json:"closer_towns"`
+	Status      string  `json:"status"`
+	EventType   string  `json:"event_type"`
+	DistKm      int     `json:"dist_km,omitempty"`
+}
+
+type sismoResult struct {
+	Count   int          `json:"count"`
+	RadKm   float64      `json:"rad_km"`
+	Days    int          `json:"days"`
+	Center  [2]float64   `json:"center"`
+	Updated string       `json:"updated_at"`
+	Source  string       `json:"source"`
+	Events  []sismoEvent `json:"events"`
+}
+
+// sismoCache guarda la última respuesta del proxy para no golpear el catálogo del SGC.
+var sismoCache = struct {
+	sync.Mutex
+	key     string
+	resp    []byte
+	expires time.Time
+}{}
+
+// haversineKm devuelve la distancia en kilómetros entre dos puntos.
+func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371.0
+	toRad := func(d float64) float64 { return d * math.Pi / 180 }
+	dLat := toRad(lat2 - lat1)
+	dLon := toRad(lon2 - lon1)
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) + math.Cos(toRad(lat1))*math.Cos(toRad(lat2))*math.Sin(dLon/2)*math.Sin(dLon/2)
+	return 2 * R * math.Asin(math.Sqrt(a))
+}
+
+type sgcRawEvent struct {
+	ID          string  `json:"id"`
+	Status      string  `json:"status"`
+	Place       string  `json:"place"`
+	CloserTowns string  `json:"closer_towns"`
+	LocalTime   string  `json:"local_time"`
+	UTCTime     string  `json:"utc_time"`
+	Magnitude   float64 `json:"magnitude"`
+	MagType     string  `json:"mag_type"`
+	Depth       float64 `json:"depth"`
+	Latitude    float64 `json:"latitude"`
+	Longitude   float64 `json:"longitude"`
+	EventType   string  `json:"event_type"`
+}
+
+type sgcSearchResp struct {
+	Next    *string `json:"next"`
+	Results struct {
+		Results []sgcRawEvent `json:"results"`
+	} `json:"results"`
+}
+
+// fetchSgcPage consulta una página del catálogo del SGC con el body dado.
+func fetchSgcPage(ctx context.Context, body string, page int) (sgcSearchResp, error) {
+	client := &http.Client{Timeout: 25 * time.Second}
+	var sr sgcSearchResp
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("%s?page=%d", sgcCatalogURL, page), strings.NewReader(body))
+	if err != nil {
+		return sr, err
 	}
-	url := fmt.Sprintf("https://srvags.sgc.gov.co/arcgis/rest/services/catalogo_sismos/catalogo_de_sismos_2/FeatureServer/0/query?where=MUN_CODIGO%%3D%%27%s%%27&outFields=ESP_MAGNITUD,ESP_PROFUNDIDAD,ESP_FECHA_LONG,ESP_LATITUD,ESP_LONGITUD&resultRecordCount=100&f=json", muni)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
+	resp, err := client.Do(req)
+	if err != nil {
+		return sr, err
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	resp.Body.Close()
+	if err != nil {
+		return sr, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return sr, fmt.Errorf("catálogo SGC respondió HTTP %d", resp.StatusCode)
+	}
+	if err := json.Unmarshal(data, &sr); err != nil {
+		return sr, err
+	}
+	return sr, nil
+}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+func fetchSgcEvents(ctx context.Context, body string, rad, lat, lon float64) ([]sismoEvent, error) {
+	var events []sismoEvent
+	for page := 1; page <= 10; page++ {
+		sr, err := fetchSgcPage(ctx, body, page)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range sr.Results.Results {
+			d := haversineKm(lat, lon, e.Latitude, e.Longitude)
+			if d <= rad {
+				events = append(events, sismoEvent{
+					ID:          e.ID,
+					Mag:         round1(e.Magnitude),
+					MagType:     e.MagType,
+					Depth:       round1(e.Depth),
+					Lat:         round3(e.Latitude),
+					Lon:         round3(e.Longitude),
+					LocalTime:   e.LocalTime,
+					UTCTime:     e.UTCTime,
+					Place:       e.Place,
+					CloserTowns: e.CloserTowns,
+					Status:      e.Status,
+					EventType:   e.EventType,
+					DistKm:      int(d),
+				})
+			}
+		}
+		if sr.Next == nil {
+			break
+		}
+	}
+	return events, nil
+}
+
+// fetchAllSgcEvents trae todos los eventos de la ventana sin filtro espacial
+// (Colombia entera) para el polling de notificaciones.
+func fetchAllSgcEvents(ctx context.Context, body string) ([]sgcRawEvent, error) {
+	var out []sgcRawEvent
+	for page := 1; page <= 10; page++ {
+		sr, err := fetchSgcPage(ctx, body, page)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sr.Results.Results...)
+		if sr.Next == nil {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (s *Server) handleSismosProxy(w http.ResponseWriter, r *http.Request) {
+	lat, lon := 4.9, -76.25 // San José del Palmar
+	rad, days := 90.0, 15
+	if v, err := strconv.ParseFloat(r.URL.Query().Get("lat"), 64); err == nil {
+		lat = v
+	}
+	if v, err := strconv.ParseFloat(r.URL.Query().Get("lon"), 64); err == nil {
+		lon = v
+	}
+	if v, err := strconv.ParseFloat(r.URL.Query().Get("rad"), 64); err == nil && v > 0 {
+		rad = v
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && v > 0 {
+		days = v
+	}
+
+	key := fmt.Sprintf("%.4f|%.4f|%.0f|%d", lat, lon, rad, days)
+	sismoCache.Lock()
+	if sismoCache.key == key && time.Since(sismoCache.expires) < 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "public, max-age=120")
+		w.Write(sismoCache.resp)
+		sismoCache.Unlock()
+		return
+	}
+	sismoCache.Unlock()
+
+	// El catálogo del SGC reporta horas locales de Colombia (UTC-5).
+	nowLocal := time.Now().UTC().Add(-5 * time.Hour)
+	before := nowLocal.Format("2006-01-02 15:04")
+	after := nowLocal.Add(-time.Duration(days) * 24 * time.Hour).Format("2006-01-02 15:04")
+
+	dLat := rad / 111.0
+	dLon := rad / (111.0 * math.Cos(lat*math.Pi/180))
+	body := fmt.Sprintf(`{"local_time_after":"%s","local_time_before":"%s","lat_min":%.5f,"lat_max":%.5f,"lon_min":%.5f,"lon_max":%.5f}`,
+		after, before, lat-dLat, lat+dLat, lon-dLon, lon+dLon)
+
+	events, err := fetchSgcEvents(r.Context(), body, rad, lat, lon)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	sort.Slice(events, func(i, j int) bool { return events[i].LocalTime > events[j].LocalTime })
+	if len(events) > 200 {
+		events = events[:200]
+	}
+
+	resp := sismoResult{
+		Count:   len(events),
+		RadKm:   rad,
+		Days:    days,
+		Center:  [2]float64{round3(lat), round3(lon)},
+		Updated: nowLocal.Format("2006-01-02 15:04:05"),
+		Source:  "Datos oficiales del Servicio Geológico Colombiano",
+		Events:  events,
+	}
+	out, err := json.Marshal(resp)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Set standard user agent to avoid any potential blocks
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
+	sismoCache.Lock()
+	sismoCache.key = key
+	sismoCache.resp = out
+	sismoCache.expires = time.Now().Add(2 * time.Minute)
+	sismoCache.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(resp.StatusCode)
-	_, _ = io.Copy(w, resp.Body)
+	w.Header().Set("Cache-Control", "public, max-age=120")
+	w.Write(out)
+}
+
+// SetupPush carga (o genera) las claves VAPID y las deja listas para el envío.
+func (s *Server) SetupPush(ctx context.Context) error {
+	if !s.cfg.PushEnabled {
+		slog.Info("push deshabilitado")
+		return nil
+	}
+	kp, err := push.LoadKeys(ctx, s.store, s.cfg.VAPIDPublicKey, s.cfg.VAPIDPrivateKey, s.cfg.VAPIDSubject)
+	if err != nil {
+		return err
+	}
+	s.keys = kp
+	slog.Info("push listo", "vapid", s.keys.PublicKey()[:16]+"...")
+	return nil
+}
+
+// StartSismoPolling arranca el polling del catálogo del SGC. El primer ciclo
+// solo siembra el historial sin notificar para evitar una ráfaga al arrancar.
+func (s *Server) StartSismoPolling(ctx context.Context) {
+	go s.sismoPollLoop(ctx)
+}
+
+func (s *Server) sismoPollLoop(ctx context.Context) {
+	interval := s.cfg.SismoPollInterval
+	if interval <= 0 {
+		interval = 3 * time.Minute
+	}
+	first := true
+	for {
+		if err := s.pollSismosOnce(ctx, first); err != nil {
+			slog.Warn("poll sismos", "err", err)
+		}
+		first = false
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+	}
+}
+
+func (s *Server) pollSismosOnce(ctx context.Context, seed bool) error {
+	nowLocal := time.Now().UTC().Add(-5 * time.Hour)
+	window := s.cfg.SismoWindow
+	if window <= 0 {
+		window = 6 * time.Hour
+	}
+	body := fmt.Sprintf(`{"local_time_after":"%s","local_time_before":"%s"}`,
+		nowLocal.Add(-window).Format("2006-01-02 15:04"), nowLocal.Format("2006-01-02 15:04"))
+
+	raw, err := fetchAllSgcEvents(ctx, body)
+	if err != nil {
+		return err
+	}
+
+	events := make([]store.SismoEvent, 0, len(raw))
+	for _, e := range raw {
+		events = append(events, store.SismoEvent{
+			ID:        e.ID,
+			Mag:       round1(e.Magnitude),
+			MagType:   e.MagType,
+			Depth:     round1(e.Depth),
+			Lat:       round3(e.Latitude),
+			Lon:       round3(e.Longitude),
+			Place:     e.Place,
+			LocalTime: e.LocalTime,
+			UTCTime:   e.UTCTime,
+			EventType: e.EventType,
+			Status:    e.Status,
+		})
+	}
+
+	inserted, err := s.store.InsertSismoEvents(ctx, events)
+	if err != nil {
+		return fmt.Errorf("guardar sismos: %w", err)
+	}
+	slog.Info("poll sismos", "nuevos", len(inserted), "total_ventana", len(events))
+	if seed || len(inserted) == 0 {
+		return nil
+	}
+
+	var toNotify []store.SismoEvent
+	for _, e := range inserted {
+		if e.Mag >= s.cfg.SismoMinMag {
+			toNotify = append(toNotify, e)
+		}
+	}
+	if len(toNotify) > 5 {
+		toNotify = toNotify[:5]
+	}
+	go s.notifySismos(ctx, toNotify)
+	return nil
+}
+
+type sismoNotification struct {
+	ID        string  `json:"id"`
+	Title     string  `json:"title"`
+	Body      string  `json:"body"`
+	URL       string  `json:"url"`
+	Mag       float64 `json:"mag"`
+	Place     string  `json:"place"`
+	LocalTime string  `json:"local_time"`
+}
+
+// notifySismos envía una notificación por cada sismo nuevo a todos los suscritos.
+func (s *Server) notifySismos(ctx context.Context, events []store.SismoEvent) error {
+	if len(events) == 0 || s.keys == nil {
+		return nil
+	}
+	subs, err := s.store.ListPushSubscriptions(ctx)
+	if err != nil {
+		return err
+	}
+	if len(subs) == 0 {
+		return nil
+	}
+	for _, ev := range events {
+		payload, err := json.Marshal(sismoNotification{
+			ID:        ev.ID,
+			Title:     fmt.Sprintf("Sismo M%.1f · %s", ev.Mag, shortPlace(ev.Place)),
+			Body:      fmt.Sprintf("%s · Profundidad %.0f km", formatLocalDateTime(ev.LocalTime), ev.Depth),
+			URL:       "/map",
+			Mag:       ev.Mag,
+			Place:     ev.Place,
+			LocalTime: ev.LocalTime,
+		})
+		if err != nil {
+			return err
+		}
+		for _, sub := range subs {
+			res, err := s.keys.Send(sub, payload)
+			if err != nil {
+				slog.Warn("push falló", "err", err)
+				continue
+			}
+			if res.Gone {
+				if err := s.store.DeletePushSubscription(ctx, sub.Endpoint); err != nil {
+					slog.Warn("borrar suscripción inválida", "err", err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// shortPlace recorta el lugar a un municipio legible para el título.
+func shortPlace(place string) string {
+	place = strings.TrimSpace(place)
+	if i := strings.Index(place, ","); i > 0 {
+		return place[:i]
+	}
+	if len(place) > 60 {
+		return place[:60]
+	}
+	return place
+}
+
+var esMonths = [12]string{"ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"}
+
+// formatLocalDateTime convierte "2026-08-10 07:34:27" a "10 ago 2026, 07:34".
+func formatLocalDateTime(s string) string {
+	t, err := time.Parse("2006-01-02 15:04:05", s)
+	if err != nil {
+		return s
+	}
+	return fmt.Sprintf("%d %s %d, %02d:%02d", t.Day(), esMonths[t.Month()-1], t.Year(), t.Hour(), t.Minute())
+}
+
+func (s *Server) handlePushVapid(w http.ResponseWriter, r *http.Request) {
+	if s.keys == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "notificaciones deshabilitadas"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"public_key": s.keys.PublicKey()})
+}
+
+type pushSubscribeReq struct {
+	Endpoint string `json:"endpoint"`
+	Keys     struct {
+		P256dh string `json:"p256dh"`
+		Auth   string `json:"auth"`
+	} `json:"keys"`
+	Device string `json:"device"`
+}
+
+func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/subscribe", r) {
+		tooManyRequests(w, 30*time.Second)
+		return
+	}
+	var req pushSubscribeReq
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "json inválido"})
+		return
+	}
+	req.Endpoint = strings.TrimSpace(req.Endpoint)
+	if !strings.HasPrefix(req.Endpoint, "https://") {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "endpoint inválido"})
+		return
+	}
+	if req.Keys.P256dh == "" || req.Keys.Auth == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "faltan claves de suscripción"})
+		return
+	}
+	if err := s.store.UpsertPushSubscription(r.Context(), store.PushSubscription{
+		Endpoint: req.Endpoint,
+		P256DH:   req.Keys.P256dh,
+		Auth:     req.Keys.Auth,
+		Device:   truncate(req.Device, 120),
+	}); err != nil {
+		slog.Error("upsert push sub", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no se pudo guardar la suscripción"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handlePushUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/subscribe", r) {
+		tooManyRequests(w, 30*time.Second)
+		return
+	}
+	var req struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "json inválido"})
+		return
+	}
+	if req.Endpoint == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "endpoint inválido"})
+		return
+	}
+	if err := s.store.DeletePushSubscription(r.Context(), req.Endpoint); err != nil {
+		slog.Error("borrar push sub", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no se pudo borrar la suscripción"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handleSismosRecent(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/recent", r) {
+		tooManyRequests(w, 30*time.Second)
+		return
+	}
+	events, err := s.store.RecentSismos(r.Context(), 20)
+	if err != nil {
+		slog.Error("recent sismos", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "no se pudieron leer los sismos"})
+		return
+	}
+	if events == nil {
+		events = []store.SismoEvent{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": events})
+}
+
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }
