@@ -24,6 +24,14 @@ lote desde los datasets oficiales de CRC/Postdata y Cali.
   sitios de antenas (solo el último trimestre disponible).
 - `web/` — frontend: captura de ubicación, probes y reporte (PWA offline).
 - `scrape_telco_colombia.py` — descarga los datasets oficiales a `data/`.
+- `scrape_movistar_cobertura.py` — extrae el mapa público de Movistar
+  (tecnologías, departamentos, municipios, localidades y KML).
+- `scrape_claro_cobertura.py` — extrae el mapa público de Claro
+  (mosaicos PNG por tecnología + municipios/localidades).
+- `scrape_tigo_cobertura.py` — extrae el mapa público de Tigo
+  (mosaicos PNG + departamentos/ciudades/localidades).
+- `scrape_wom_cobertura.py` — extrae el mapa público de WOM
+  (WMTS GeoServer + CSV si está disponible).
 - `SGC_SISMOS_API.md` — referencia local para sismos del SGC y sus endpoints.
 
 ### Cómo se usa la IP del cliente
@@ -56,6 +64,21 @@ docker compose up -d db
 # 2) datasets oficiales (scraper de Python)
 python scrape_telco_colombia.py
 
+# 2b) cobertura pública de Movistar (metadata + KML)
+python scrape_movistar_cobertura.py --out data/movistar_cobertura
+
+# 2c) cobertura pública de Claro (tiles PNG + árbol administrativo)
+python scrape_claro_cobertura.py --out data/claro_cobertura
+
+# 2d) cobertura pública de Tigo (tiles PNG + catálogos administrativos)
+python scrape_tigo_cobertura.py --out data/tigo_cobertura
+
+# 2e) cobertura pública de WOM (WMTS + CSV si responde)
+python scrape_wom_cobertura.py --out data/wom_cobertura
+
+# opcional: también descarga los PNG de los overlays del KML
+python scrape_movistar_cobertura.py --out data/movistar_cobertura --download-tiles
+
 # 3) importar baseline
 DATABASE_URL="postgres://colombia:colombia@localhost:5432/colombia?sslmode=disable" \
   go run ./cmd/server import-data ./data
@@ -87,6 +110,8 @@ variables de entorno; sin ellas se usan los defaults.
 | GET | `/cells?bbox=LON1,LAT1,LON2,LAT2&window=15m&operator=claro` | Agregación por celda H3 con percentiles y estado. |
 | GET | `/coverage?municipality=cali&operator=claro&technology=4G` | Baseline oficial de cobertura municipal (centros poblados). |
 | GET | `/coverage/sites?municipality=cali` | Sitios oficiales por operador y municipio (agregados). |
+| GET | `/coverage/providers` | Catálogo normalizado de capas públicas por operador y tecnología. |
+| GET | `/coverage/overlays?provider=movistar&technology=LTE&bbox=LON1,LAT1,LON2,LAT2` | Overlays KML visibles de Movistar, filtrados por viewport. |
 | GET | `/p` | Probe pasivo (mide latencia del cliente). |
 | GET | `/probe/1k`, `/probe/4k` | Cuerpos para estimar throughput. |
 | GET | `/`, `/map` | Frontend. |
@@ -128,6 +153,21 @@ go vet ./...
 - La cobertura y la infraestructura oficiales (CRC/Postdata) se importan por
   lote y solo se conserva el último trimestre disponible, para que el baseline
   sea un snapshot vigente y no un histórico de cientos de miles de filas.
+- El mapa público de Movistar se scrapea aparte porque expone un KML nacional
+  por tecnología, más el árbol de departamentos/municipios/localidades vía
+  API. El scraper deja todo el rastro en `data/movistar_cobertura/`.
+- Claro no publica KML: su mapa usa `ImageMapType` con mosaicos PNG directos y
+  el árbol administrativo sale por un endpoint JSON del mapa embebido. El
+  scraper deja el rastro en `data/claro_cobertura/`.
+- Tigo tampoco publica KML en su mapa accesible: usa mosaicos PNG directos y
+  catálogos de departamentos/ciudades/localidades en texto plano. El scraper
+  deja el rastro en `data/tigo_cobertura/`.
+- WOM tampoco publica KML: el mapa usa WMTS de GeoServer y referencia un CSV
+  de cobertura que puede no estar disponible de forma pública permanente. El
+  scraper deja el rastro en `data/wom_cobertura/`.
+- El visor ya normaliza esos manifests en `/coverage/providers`. Movistar se
+  pinta como `imageOverlay` por viewport; Claro y Tigo quedan como mosaicos XYZ
+  directos; WOM queda catalogado como WMTS hasta que añadamos un adaptador.
 - El inventario de antenas de Cali es puntual (coordenadas).
 - La detección de "móvil" por ASN es probabilística/configurada, no una
   verdad absoluta: un mismo ASN puede servir infraestructura fija y móvil.

@@ -63,6 +63,7 @@ self.addEventListener("fetch", function (e) {
   var u = new URL(e.request.url);
   if (u.origin !== self.location.origin) return;
   if (u.pathname === "/p" || u.pathname.indexOf("/probe/") === 0) return;
+  if (u.pathname === "/admin" || u.pathname.indexOf("/admin/") === 0) return;
 
   if (e.request.mode === "navigate") {
     e.respondWith(

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -100,6 +101,197 @@ func (s *PGStore) UpdateObservation(ctx context.Context, id int64, callSignal, o
 		return fmt.Errorf("observación %d no encontrada", id)
 	}
 	return nil
+}
+
+func (s *PGStore) ObservationHistory(ctx context.Context, f ObservationHistoryFilter) (ObservationHistoryPage, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	var where []string
+	args := make([]any, 0, 8)
+	add := func(clause string, v any) {
+		args = append(args, v)
+		where = append(where, fmt.Sprintf(clause, len(args)))
+	}
+
+	if f.Operator != "" {
+		add("LOWER(COALESCE(operator, '')) = LOWER($%d)", f.Operator)
+	}
+	if f.From != nil {
+		add("observed_at >= $%d", *f.From)
+	}
+	if f.To != nil {
+		add("observed_at <= $%d", *f.To)
+	}
+	if q := strings.TrimSpace(f.Query); q != "" {
+		like := "%" + strings.ToLower(q) + "%"
+		args = append(args, like, like, like, like, like, like)
+		base := len(args) - 5
+		where = append(where, fmt.Sprintf(
+			"(LOWER(COALESCE(operator, '')) LIKE $%d OR LOWER(COALESCE(operator_user, '')) LIKE $%d OR LOWER(COALESCE(h3_cell, '')) LIKE $%d OR LOWER(COALESCE(client_ip, '')) LIKE $%d OR LOWER(COALESCE(call_signal, '')) LIKE $%d OR LOWER(COALESCE(effective_type, '')) LIKE $%d)",
+			base, base+1, base+2, base+3, base+4, base+5,
+		))
+	}
+
+	whereClause := ""
+	if len(where) > 0 {
+		whereClause = "WHERE " + strings.Join(where, " AND ")
+	}
+
+	query := fmt.Sprintf(`SELECT
+		id, received_at, observed_at, latitude, longitude, COALESCE(accuracy, 0),
+		h3_cell, asn, COALESCE(operator, ''), COALESCE(mobile, false),
+		COALESCE(http_rtt_min, 0), COALESCE(http_rtt_median, 0), COALESCE(jitter, 0),
+		COALESCE(success_ratio, 0), COALESCE(samples, 0), COALESCE(failed_requests, 0),
+		COALESCE(effective_type, ''), COALESCE(browser_rtt, 0), COALESCE(browser_downlink, 0),
+		COALESCE(save_data, false), COALESCE(call_signal, ''), COALESCE(operator_user, ''),
+		COALESCE(probe_1k_ms, 0), COALESCE(probe_4k_ms, 0), COALESCE(transfer_estimate_bps, 0),
+		COALESCE(client_ip, '')::text,
+		count(*) OVER() AS total
+		FROM observations
+		%s
+		ORDER BY observed_at DESC, id DESC
+		LIMIT $%d OFFSET $%d`, whereClause, len(args)+1, len(args)+2)
+	args = append(args, limit, offset)
+
+	rows, err := s.pool.Query(ctx, query, args...)
+	if err != nil {
+		return ObservationHistoryPage{}, err
+	}
+	defer rows.Close()
+
+	out := ObservationHistoryPage{
+		Items:  []ObservationHistoryRow{},
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	for rows.Next() {
+		var raw struct {
+			ID                  int64
+			ReceivedAt          time.Time
+			ObservedAt          time.Time
+			Latitude            float64
+			Longitude           float64
+			Accuracy            float64
+			H3Cell              string
+			ASN                 sql.NullInt64
+			Operator            string
+			Mobile              bool
+			HttpRTTMin          float64
+			HttpRTTMedian       float64
+			Jitter              float64
+			SuccessRatio        float64
+			Samples             int
+			FailedRequests      int
+			EffectiveType       string
+			BrowserRTT          float64
+			BrowserDownlink     float64
+			SaveData            bool
+			CallSignal          string
+			OperatorUser        string
+			Probe1kMs           float64
+			Probe4kMs           float64
+			TransferEstimateBps float64
+			ClientIP            string
+			Total               int
+		}
+		if err := rows.Scan(
+			&raw.ID, &raw.ReceivedAt, &raw.ObservedAt, &raw.Latitude, &raw.Longitude, &raw.Accuracy,
+			&raw.H3Cell, &raw.ASN, &raw.Operator, &raw.Mobile, &raw.HttpRTTMin, &raw.HttpRTTMedian,
+			&raw.Jitter, &raw.SuccessRatio, &raw.Samples, &raw.FailedRequests, &raw.EffectiveType,
+			&raw.BrowserRTT, &raw.BrowserDownlink, &raw.SaveData, &raw.CallSignal, &raw.OperatorUser,
+			&raw.Probe1kMs, &raw.Probe4kMs, &raw.TransferEstimateBps, &raw.ClientIP, &raw.Total,
+		); err != nil {
+			return ObservationHistoryPage{}, err
+		}
+		if out.Total == 0 {
+			out.Total = raw.Total
+		}
+		row := ObservationHistoryRow{
+			ID:                  raw.ID,
+			ReceivedAt:          raw.ReceivedAt,
+			ObservedAt:          raw.ObservedAt,
+			Latitude:            raw.Latitude,
+			Longitude:           raw.Longitude,
+			Accuracy:            raw.Accuracy,
+			H3Cell:              raw.H3Cell,
+			Operator:            raw.Operator,
+			Mobile:              raw.Mobile,
+			HttpRTTMin:          raw.HttpRTTMin,
+			HttpRTTMedian:       raw.HttpRTTMedian,
+			Jitter:              raw.Jitter,
+			SuccessRatio:        raw.SuccessRatio,
+			Samples:             raw.Samples,
+			FailedRequests:      raw.FailedRequests,
+			EffectiveType:       raw.EffectiveType,
+			BrowserRTT:          raw.BrowserRTT,
+			BrowserDownlink:     raw.BrowserDownlink,
+			SaveData:            raw.SaveData,
+			CallSignal:          raw.CallSignal,
+			OperatorUser:        raw.OperatorUser,
+			Probe1kMs:           raw.Probe1kMs,
+			Probe4kMs:           raw.Probe4kMs,
+			TransferEstimateBps: raw.TransferEstimateBps,
+			ClientIP:            raw.ClientIP,
+		}
+		if raw.ASN.Valid {
+			asn := int(raw.ASN.Int64)
+			row.ASN = &asn
+		}
+		out.Items = append(out.Items, row)
+	}
+	return out, rows.Err()
+}
+
+func (s *PGStore) AdminOverview(ctx context.Context) (AdminOverview, error) {
+	var out AdminOverview
+
+	var latest sql.NullTime
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*)::int,
+			COUNT(*) FILTER (WHERE observed_at >= now() - interval '24 hours')::int,
+			COUNT(*) FILTER (WHERE observed_at >= now() - interval '7 days')::int,
+			MAX(observed_at)
+		FROM observations`,
+	).Scan(&out.ObservationsTotal, &out.Observations24h, &out.Observations7d, &latest); err != nil {
+		return out, err
+	}
+	if latest.Valid {
+		t := latest.Time
+		out.LatestObservationAt = &t
+	}
+
+	if err := s.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*)::int,
+			COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = 'pending')::int,
+			COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = 'approved')::int,
+			COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = 'rejected')::int
+		FROM resources`,
+	).Scan(&out.ResourcesTotal, &out.ResourcesPending, &out.ResourcesApproved, &out.ResourcesRejected); err != nil {
+		return out, err
+	}
+
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT operator)::int
+		FROM observations
+		WHERE operator IS NOT NULL AND operator <> ''`,
+	).Scan(&out.ActiveOperatorsCount); err != nil {
+		return out, err
+	}
+
+	return out, nil
 }
 
 func (s *PGStore) Cells(ctx context.Context, f CellFilter) ([]CellAgg, error) {
@@ -270,8 +462,6 @@ func (s *PGStore) InsertResourceValidation(ctx context.Context, resourceID int64
 	}
 	return true, nil
 }
-
-
 
 // Coverage devuelve el snapshot oficial de cobertura municipal, con
 // filtros opcionales de municipio (substring), operador y tecnología.
@@ -479,6 +669,67 @@ func (s *PGStore) SetSetting(ctx context.Context, key, value string) error {
 	_, err := s.pool.Exec(ctx, `INSERT INTO app_settings (key, value) VALUES ($1,$2)
 		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`, key, value)
 	return err
+}
+
+// CoverageSynthesis devuelve la cobertura derivada de los mapas públicos de
+// operadores para un municipio (dane_code), ordenada por operador/tecnología.
+func (s *PGStore) CoverageSynthesis(ctx context.Context, daneCode string) ([]CoverageSynthesisRow, error) {
+	query := `SELECT dane_code, COALESCE(department,''), municipality, operator, technology,
+			COALESCE(covered_ratio,0), COALESCE(covered_km2,0), COALESCE(area_km2,0)
+		FROM coverage_synthesis
+		WHERE dane_code = $1
+		ORDER BY operator, technology`
+	rows, err := s.pool.Query(ctx, query, daneCode)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CoverageSynthesisRow
+	for rows.Next() {
+		var r CoverageSynthesisRow
+		if err := rows.Scan(&r.DaneCode, &r.Department, &r.Municipality, &r.Operator,
+			&r.Technology, &r.CoveredRatio, &r.CoveredKM2, &r.AreaKM2); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// CoveragePoint devuelve los operadores/tecnologías que declaran cobertura
+// en una celda H3 res 7.
+func (s *PGStore) CoveragePoint(ctx context.Context, h3Cell string) ([]CoverageCellRow, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT operator, technology FROM coverage_synthesis_cells
+		 WHERE h3 = $1 ORDER BY operator, technology`, h3Cell)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []CoverageCellRow
+	for rows.Next() {
+		var r CoverageCellRow
+		if err := rows.Scan(&r.Operator, &r.Technology); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// CoverageMeta describe la última carga de síntesis de cobertura.
+func (s *PGStore) CoverageMeta(ctx context.Context) (*CoverageMeta, error) {
+	var m CoverageMeta
+	err := s.pool.QueryRow(ctx,
+		`SELECT generated_at, source, h3_res FROM coverage_synthesis_meta WHERE id = 1`).
+		Scan(&m.GeneratedAt, &m.Source, &m.H3Res)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &m, nil
 }
 
 func nilStr(s string) any {

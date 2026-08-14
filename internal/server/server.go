@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 
 	"colombia-difunde/internal/asn"
 	"colombia-difunde/internal/config"
+	coveragedata "colombia-difunde/internal/coverage"
 	"colombia-difunde/internal/geo"
 	"colombia-difunde/internal/observe"
 	"colombia-difunde/internal/push"
@@ -29,15 +31,16 @@ import (
 )
 
 type Server struct {
-	cfg    config.Config
-	store  store.Store
-	asn    asn.Resolver
-	ops    *observe.OperatorResolver
-	cells  geo.CellResolver
-	mux    *http.ServeMux
-	limits map[string]*rateLimiter
-	cache  *responseCache
-	fp     *fingerprintTracker
+	cfg      config.Config
+	store    store.Store
+	asn      asn.Resolver
+	ops      *observe.OperatorResolver
+	cells    geo.CellResolver
+	coverage coveragedata.Catalog
+	mux      *http.ServeMux
+	limits   map[string]*rateLimiter
+	cache    *responseCache
+	fp       *fingerprintTracker
 
 	probe1k []byte
 	probe4k []byte
@@ -65,10 +68,16 @@ func New(cfg config.Config, st store.Store, ar asn.Resolver, ops *observe.Operat
 			"/cells":     newRateLimiter(cfg.Rate.Cells, time.Minute),
 			"/update":    newRateLimiter(cfg.Rate.Update, time.Minute),
 			"/report":    newRateLimiter(cfg.Rate.Report, time.Minute),
+			"/coverage":  newRateLimiter(120, time.Minute),
 			"/subscribe": newRateLimiter(6, time.Minute),
 			"/recent":    newRateLimiter(30, time.Minute),
 		},
 	}
+	catalog, err := coveragedata.LoadCatalog("")
+	if err != nil {
+		slog.Warn("load coverage catalog", "err", err)
+	}
+	s.coverage = catalog
 	s.routes()
 	return s
 }
@@ -86,6 +95,16 @@ func makeProbeBody(n int) []byte {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /", s.handleIndex)
+	s.mux.HandleFunc("GET /admin", s.handleAdmin)
+	s.mux.HandleFunc("GET /admin/", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin", http.StatusMovedPermanently)
+	})
+	s.mux.HandleFunc("POST /admin/session", s.handleAdminSession)
+	s.mux.HandleFunc("POST /admin/logout", s.handleAdminLogout)
+	s.mux.HandleFunc("GET /admin/api/overview", s.handleAdminOverview)
+	s.mux.HandleFunc("GET /admin/api/observations", s.handleAdminObservations)
+	s.mux.HandleFunc("GET /admin.css", s.handleAsset("admin.css"))
+	s.mux.HandleFunc("GET /admin.js", s.handleAsset("admin.js"))
 	s.mux.HandleFunc("GET /map", s.handleMap)
 	s.mux.HandleFunc("GET /app.js", s.handleAsset("app.js"))
 	s.mux.HandleFunc("GET /map.js", s.handleAsset("map.js"))
@@ -103,6 +122,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /sites", s.handleSites)
 	s.mux.HandleFunc("GET /coverage", s.handleCoverage)
 	s.mux.HandleFunc("GET /coverage/sites", s.handleCoverageSites)
+	s.mux.HandleFunc("GET /coverage/providers", s.handleCoverageProviders)
+	s.mux.HandleFunc("GET /coverage/overlays", s.handleCoverageOverlays)
+	s.mux.HandleFunc("GET /coverage/synthesis", s.handleCoverageSynthesis)
+	s.mux.HandleFunc("GET /coverage/point", s.handleCoveragePoint)
+	s.mux.HandleFunc("GET /coverage/status", s.handleCoverageStatus)
 	s.mux.HandleFunc("GET /resources", s.handleResources)
 	s.mux.HandleFunc("POST /report", s.handleReport)
 	s.mux.HandleFunc("POST /resources/update-details", s.handleUpdateResourceDetails)
@@ -164,17 +188,24 @@ func clientFingerprint(r *http.Request) string {
 	return fp
 }
 
-func (s *Server) invalidateCaches() {
-	s.cache.clear()
-}
-
-func (s *Server) adminAllowed(r *http.Request) bool {
+func adminHeaderValid(r *http.Request) bool {
 	expected := strings.TrimSpace(os.Getenv("ADMIN_KEY"))
 	if expected == "" {
 		return false
 	}
 	token := strings.TrimSpace(r.Header.Get("X-Admin-Key"))
-	return token != "" && token == expected
+	if token == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
+func (s *Server) invalidateCaches() {
+	s.cache.clear()
+}
+
+func (s *Server) adminAllowed(r *http.Request) bool {
+	return adminHeaderValid(r) || adminSessionValid(r)
 }
 
 func (s *Server) serveCachedJSON(w http.ResponseWriter, r *http.Request, key string, ttl time.Duration, cacheControl string, compute func() ([]byte, int, error)) (bool, int) {
@@ -680,6 +711,219 @@ func (s *Server) handleCoverageSites(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleCoverageSynthesis expone la cobertura derivada de los mapas
+// públicos de operadores para un municipio (dane_code).
+func (s *Server) handleCoverageSynthesis(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/coverage", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	dane := strings.TrimSpace(r.URL.Query().Get("dane"))
+	if dane == "" {
+		http.Error(w, "falta dane", http.StatusBadRequest)
+		return
+	}
+	key := cacheKey("coverage-synthesis", dane)
+	if handled, status := s.serveCachedJSON(w, r, key, time.Hour, "public, max-age=3600", func() ([]byte, int, error) {
+		rows, err := s.store.CoverageSynthesis(r.Context(), dane)
+		if err != nil {
+			slog.Error("coverageSynthesis", "err", err)
+			return nil, http.StatusServiceUnavailable, err
+		}
+		body, err := json.Marshal(rows)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		http.Error(w, "storage error", status)
+		return
+	}
+}
+
+// handleCoveragePoint expone los operadores/tecnologías que declaran
+// cobertura en un punto (lat/lon) según los mapas públicos de operadores.
+func (s *Server) handleCoveragePoint(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/coverage", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	lat, errLat := strconv.ParseFloat(r.URL.Query().Get("lat"), 64)
+	lon, errLon := strconv.ParseFloat(r.URL.Query().Get("lon"), 64)
+	if errLat != nil || errLon != nil || lat < -10 || lat > 20 || lon < -90 || lon > -60 {
+		http.Error(w, "lat/lon inválidos", http.StatusBadRequest)
+		return
+	}
+	cell := (geo.H3{Res: 7}).Cell(lat, lon)
+	if cell == "" {
+		http.Error(w, "celda inválida", http.StatusBadRequest)
+		return
+	}
+	key := cacheKey("coverage-point", cell)
+	if handled, status := s.serveCachedJSON(w, r, key, time.Hour, "public, max-age=3600", func() ([]byte, int, error) {
+		rows, err := s.store.CoveragePoint(r.Context(), cell)
+		if err != nil {
+			slog.Error("coveragePoint", "err", err)
+			return nil, http.StatusServiceUnavailable, err
+		}
+		body, err := json.Marshal(rows)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		http.Error(w, "storage error", status)
+		return
+	}
+}
+
+// handleCoverageStatus expone la fecha y fuente de la última carga de síntesis.
+func (s *Server) handleCoverageStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/coverage", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	key := cacheKey("coverage-status")
+	if handled, status := s.serveCachedJSON(w, r, key, 5*time.Minute, "public, max-age=300", func() ([]byte, int, error) {
+		meta, err := s.store.CoverageMeta(r.Context())
+		if err != nil {
+			slog.Error("coverageStatus", "err", err)
+			return nil, http.StatusServiceUnavailable, err
+		}
+		body, err := json.Marshal(meta)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		http.Error(w, "storage error", status)
+		return
+	}
+}
+
+// handleCoverageProviders expone el catálogo normalizado de capas públicas.
+func (s *Server) handleCoverageProviders(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/coverage", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	key := cacheKey("coverage-providers")
+	if handled, status := s.serveCachedJSON(w, r, key, time.Hour, "public, max-age=3600", func() ([]byte, int, error) {
+		body, err := json.Marshal(s.coverage)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
+		return
+	}
+}
+
+// handleCoverageOverlays devuelve los overlays de Movistar que cruzan el bbox
+// visible. El frontend lo usa para evitar traer todo el KML nacional.
+func (s *Server) handleCoverageOverlays(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/coverage", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	providerID := strings.TrimSpace(r.URL.Query().Get("provider"))
+	technologyID := strings.TrimSpace(r.URL.Query().Get("technology"))
+	if providerID == "" || technologyID == "" {
+		http.Error(w, "bad provider/technology", http.StatusBadRequest)
+		return
+	}
+
+	provider, ok := s.coverage.ProviderByID(providerID)
+	if !ok {
+		http.Error(w, "provider not found", http.StatusNotFound)
+		return
+	}
+	tech, ok := provider.TechnologyByID(technologyID)
+	if !ok {
+		http.Error(w, "technology not found", http.StatusNotFound)
+		return
+	}
+
+	bbox := parseCoverageBBox(r.URL.Query().Get("bbox"))
+	key := cacheKey(
+		"coverage-overlays",
+		strings.ToLower(provider.ID),
+		strings.ToLower(tech.ID),
+		strconv.FormatFloat(bbox.West, 'f', 4, 64),
+		strconv.FormatFloat(bbox.South, 'f', 4, 64),
+		strconv.FormatFloat(bbox.East, 'f', 4, 64),
+		strconv.FormatFloat(bbox.North, 'f', 4, 64),
+	)
+	if handled, status := s.serveCachedJSON(w, r, key, time.Hour, "public, max-age=3600", func() ([]byte, int, error) {
+		overlays := s.coverage.MovistarOverlays(tech.ID, bbox)
+		resp := struct {
+			Provider   string                 `json:"provider"`
+			Technology string                 `json:"technology"`
+			RenderType string                 `json:"render_type"`
+			Count      int                    `json:"count"`
+			BBox       coveragedata.BBox      `json:"bbox"`
+			Overlays   []coveragedata.Overlay `json:"overlays"`
+		}{
+			Provider:   provider.ID,
+			Technology: tech.ID,
+			RenderType: tech.RenderType,
+			Count:      len(overlays),
+			BBox:       bbox,
+			Overlays:   overlays,
+		}
+		body, err := json.Marshal(resp)
+		if err != nil {
+			return nil, http.StatusInternalServerError, err
+		}
+		return body, 0, nil
+	}); handled {
+		return
+	} else if status != 0 {
+		if status == http.StatusServiceUnavailable {
+			http.Error(w, "storage error", status)
+		} else {
+			http.Error(w, "error", status)
+		}
+		return
+	}
+}
+
+func parseCoverageBBox(raw string) coveragedata.BBox {
+	// Default Colombia continental.
+	bbox := coveragedata.BBox{West: -79.1, South: -4.4, East: -66.0, North: 12.6}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return bbox
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) != 4 {
+		return bbox
+	}
+	vals := make([]float64, 4)
+	for i, part := range parts {
+		v, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
+		if err != nil {
+			return bbox
+		}
+		vals[i] = v
+	}
+	bbox.West, bbox.South, bbox.East, bbox.North = vals[0], vals[1], vals[2], vals[3]
+	return bbox
+}
+
 // ---- Recursos humanitarios ----
 
 var resourceKinds = map[string]bool{
@@ -917,6 +1161,89 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ok"))
 }
 
+// ---- Admin ----
+
+func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Security-Policy",
+		"default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(web.AdminHTML)
+}
+
+func (s *Server) handleAdminSession(w http.ResponseWriter, r *http.Request) {
+	if !adminHeaderValid(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	setAdminSessionCookie(w, r)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
+	clearAdminSessionCookie(w, r)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
+	if !s.adminAllowed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	overview, err := s.store.AdminOverview(r.Context())
+	if err != nil {
+		slog.Error("admin overview", "err", err)
+		http.Error(w, "storage error", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, overview)
+}
+
+func (s *Server) handleAdminObservations(w http.ResponseWriter, r *http.Request) {
+	if !s.adminAllowed(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	limit := 50
+	if v, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit"))); err == nil && v > 0 {
+		limit = v
+	}
+	offset := 0
+	if v, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("offset"))); err == nil && v >= 0 {
+		offset = v
+	}
+	op := strings.TrimSpace(r.URL.Query().Get("operator"))
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	var fromPtr, toPtr *time.Time
+	if raw := strings.TrimSpace(r.URL.Query().Get("from")); raw != "" {
+		if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+			fromPtr = &ts
+		}
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("to")); raw != "" {
+		if ts, err := time.Parse(time.RFC3339, raw); err == nil {
+			toPtr = &ts
+		}
+	}
+
+	page, err := s.store.ObservationHistory(r.Context(), store.ObservationHistoryFilter{
+		Limit:    limit,
+		Offset:   offset,
+		Operator: op,
+		Query:    query,
+		From:     fromPtr,
+		To:       toPtr,
+	})
+	if err != nil {
+		slog.Error("admin observations", "err", err)
+		http.Error(w, "storage error", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, page)
+}
+
 // ---- Páginas ----
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -1136,7 +1463,7 @@ func (s *Server) handleSismosProxy(w http.ResponseWriter, r *http.Request) {
 	sismoCache.Lock()
 	if sismoCache.key == key && time.Since(sismoCache.expires) < 0 {
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "public, max-age=120")
+		w.Header().Set("Cache-Control", "public, max-age=60")
 		w.Write(sismoCache.resp)
 		sismoCache.Unlock()
 		return
@@ -1182,11 +1509,11 @@ func (s *Server) handleSismosProxy(w http.ResponseWriter, r *http.Request) {
 	sismoCache.Lock()
 	sismoCache.key = key
 	sismoCache.resp = out
-	sismoCache.expires = time.Now().Add(2 * time.Minute)
+	sismoCache.expires = time.Now().Add(60 * time.Second)
 	sismoCache.Unlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Cache-Control", "public, max-age=120")
+	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.Write(out)
 }
 
@@ -1214,7 +1541,7 @@ func (s *Server) StartSismoPolling(ctx context.Context) {
 func (s *Server) sismoPollLoop(ctx context.Context) {
 	interval := s.cfg.SismoPollInterval
 	if interval <= 0 {
-		interval = 3 * time.Minute
+		interval = 30 * time.Second
 	}
 	first := true
 	for {

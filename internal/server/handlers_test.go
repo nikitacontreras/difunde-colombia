@@ -157,6 +157,149 @@ func TestFollowupUpdate(t *testing.T) {
 	}
 }
 
+func TestAdminSessionAndHistory(t *testing.T) {
+	t.Setenv("ADMIN_KEY", "sekret")
+	s, m := newTestServer()
+	now := time.Now().UTC()
+
+	if _, err := m.InsertObservation(t.Context(), store.Observation{
+		ObservedAt:    now.Add(-2 * time.Minute),
+		ReceivedAt:    now.Add(-90 * time.Second),
+		Latitude:      3.4516,
+		Longitude:     -76.532,
+		H3Cell:        "8c1c1",
+		Operator:      "movistar",
+		HttpRTTMedian: 240,
+		SuccessRatio:  0.88,
+		CallSignal:    "yes",
+		EffectiveType: "4g",
+		ClientIP:      "203.0.113.10",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.InsertObservation(t.Context(), store.Observation{
+		ObservedAt:    now.Add(-1 * time.Minute),
+		ReceivedAt:    now.Add(-50 * time.Second),
+		Latitude:      3.4521,
+		Longitude:     -76.531,
+		H3Cell:        "8c1c2",
+		Operator:      "claro",
+		HttpRTTMedian: 520,
+		SuccessRatio:  0.63,
+		CallSignal:    "no",
+		EffectiveType: "3g",
+		ClientIP:      "203.0.113.11",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	resourceID, err := m.InsertResource(t.Context(), store.Resource{
+		Kind:    "refugio",
+		Name:    "Refugio Central",
+		Address: "Calle 10 # 20-30",
+		Lat:     3.45,
+		Lon:     -76.53,
+		Status:  "pending",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/overview", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("overview sin auth = %d, want 401", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/admin/session", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.Header.Set("X-Admin-Key", "sekret")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("admin session = %d, body=%s", w.Code, w.Body.String())
+	}
+	var adminCookie *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "cdfd_admin" {
+			adminCookie = c
+			break
+		}
+	}
+	if adminCookie == nil {
+		t.Fatal("no se emitió cookie de sesión admin")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin/api/overview", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.AddCookie(adminCookie)
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("overview con cookie = %d, body=%s", w.Code, w.Body.String())
+	}
+	var overview struct {
+		ObservationsTotal int `json:"observations_total"`
+		ResourcesPending  int `json:"resources_pending"`
+		ResourcesTotal    int `json:"resources_total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &overview); err != nil {
+		t.Fatal(err)
+	}
+	if overview.ObservationsTotal != 2 || overview.ResourcesPending != 1 || overview.ResourcesTotal != 1 {
+		t.Fatalf("overview inesperado: %+v", overview)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin/api/observations?limit=1&q=movistar", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.AddCookie(adminCookie)
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("histórico admin = %d, body=%s", w.Code, w.Body.String())
+	}
+	var page struct {
+		Total int `json:"total"`
+		Items []struct {
+			Operator string `json:"operator"`
+			ClientIP string `json:"client_ip"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].Operator != "movistar" || page.Items[0].ClientIP != "203.0.113.10" {
+		t.Fatalf("histórico admin inesperado: %+v", page)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/resources/moderate", strings.NewReader(fmt.Sprintf(`{"id":%d,"status":"approved"}`, resourceID)))
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.AddCookie(adminCookie)
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("moderar recurso con cookie = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/resources", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.AddCookie(adminCookie)
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /resources admin = %d", w.Code)
+	}
+	var resources []map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &resources); err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 1 || resources[0]["Status"] != "approved" {
+		t.Fatalf("recurso no moderado correctamente: %+v", resources)
+	}
+}
+
 func TestIndexPage(t *testing.T) {
 	s, _ := newTestServer()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -228,6 +371,68 @@ func TestCoverageEndpoints(t *testing.T) {
 	}
 	if len(sites) != 2 || sites[0].Operator != "claro" || sites[0].Sites != 120 {
 		t.Errorf("sitios oficiales Cali = %+v", sites)
+	}
+}
+
+func TestCoverageProviderCatalogEndpoint(t *testing.T) {
+	s, _ := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/coverage/providers", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /coverage/providers = %d, body=%s", w.Code, w.Body.String())
+	}
+	var payload struct {
+		Providers []struct {
+			ID           string `json:"id"`
+			Name         string `json:"name"`
+			Technologies []struct {
+				ID         string `json:"id"`
+				RenderType string `json:"render_type"`
+			} `json:"technologies"`
+		} `json:"providers"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Providers) < 4 {
+		t.Fatalf("se esperaban al menos 4 proveedores, got %d", len(payload.Providers))
+	}
+	foundMovistar := false
+	for _, p := range payload.Providers {
+		if p.ID == "movistar" {
+			foundMovistar = true
+			if len(p.Technologies) == 0 || p.Technologies[0].RenderType != "image-overlays" {
+				t.Fatalf("movistar sin tecnologías renderizables: %+v", p)
+			}
+		}
+	}
+	if !foundMovistar {
+		t.Fatal("no se encontró Movistar en el catálogo de cobertura")
+	}
+}
+
+func TestCoverageOverlayEndpoint(t *testing.T) {
+	s, _ := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/coverage/overlays?provider=movistar&technology=LTE&bbox=-70.8,-3.8,-70.4,-3.5", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET /coverage/overlays = %d, body=%s", w.Code, w.Body.String())
+	}
+	var payload struct {
+		Count    int `json:"count"`
+		Overlays []struct {
+			URL string `json:"url"`
+		} `json:"overlays"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Count == 0 || len(payload.Overlays) == 0 {
+		t.Fatalf("overlays Movistar LTE vacíos: %+v", payload)
 	}
 }
 

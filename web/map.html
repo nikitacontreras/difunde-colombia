@@ -1088,6 +1088,36 @@ html, body {
           </label>
         </div>
 
+        <!-- Coverage Card -->
+        <div class="drawer-section-card" id="coverage-panel" style="gap:12px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+            <div>
+              <div style="font-size:12px; font-weight:700; color:var(--text-primary); letter-spacing:0.3px;">Cobertura oficial</div>
+              <div id="coverage-summary" style="font-size:11px; color:var(--text-secondary); line-height:1.45; margin-top:4px;">Cargando catálogo...</div>
+            </div>
+            <label class="drawer-checkbox-label" style="margin:0; flex:none; white-space:nowrap;">
+              <input type="checkbox" id="coverage-enabled" disabled>
+              <span>Mostrar capa</span>
+            </label>
+          </div>
+          <label>Proveedor
+            <select id="coverage-provider">
+              <option value="">Cargando...</option>
+            </select>
+          </label>
+          <label>Tecnología
+            <select id="coverage-tech">
+              <option value="">Seleccione un proveedor</option>
+            </select>
+          </label>
+          <div id="coverage-info" style="font-size:11px; color:var(--text-secondary); line-height:1.5;"></div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <a id="coverage-source-link" class="btn-action-white" href="#" target="_blank" rel="noreferrer noopener" style="flex:1; min-width:120px;">Abrir fuente</a>
+            <a id="coverage-map-link" class="btn-action-white" href="#" target="_blank" rel="noreferrer noopener" style="flex:1; min-width:120px;">Abrir mapa</a>
+          </div>
+          <div id="coverage-warning" style="font-size:11px; color:#fbbf24; line-height:1.45; display:none;"></div>
+        </div>
+
         <!-- Legend Card -->
         <div class="drawer-section-card" style="gap:10px;">
           <div class="legend-item">
@@ -1193,6 +1223,6 @@ html, body {
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
-<script src="/map.js?v=10" defer></script>
+<script src="/map.js?v=11" defer></script>
 </body>
 </html>

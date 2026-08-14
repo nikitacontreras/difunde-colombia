@@ -25,12 +25,16 @@ type MemStore struct {
 	sismos      []SismoEvent
 	subs        []PushSubscription
 	settings    map[string]string
+	synthMuni   []CoverageSynthesisRow
+	synthCells  map[string][]CoverageCellRow
+	synthMeta   *CoverageMeta
 }
 
 func NewMemStore() *MemStore {
 	return &MemStore{
 		validations: make(map[string]bool),
 		settings:    make(map[string]string),
+		synthCells:  make(map[string][]CoverageCellRow),
 	}
 }
 
@@ -38,6 +42,7 @@ func (m *MemStore) InsertObservation(ctx context.Context, o Observation) (int64,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.nextID++
+	o.ID = m.nextID
 	m.obs = append(m.obs, o)
 	return m.nextID, nil
 }
@@ -47,6 +52,7 @@ func (m *MemStore) InsertObservations(ctx context.Context, obs []Observation) er
 	defer m.mu.Unlock()
 	for _, o := range obs {
 		m.nextID++
+		o.ID = m.nextID
 		m.obs = append(m.obs, o)
 	}
 	return nil
@@ -56,9 +62,7 @@ func (m *MemStore) UpdateObservation(ctx context.Context, id int64, callSignal, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i := range m.obs {
-		// En MemStore no se guarda el id; usar posición es impreciso.
-		// Para pruebas se usa índice id-1.
-		if int64(i) == id-1 {
+		if m.obs[i].ID == id {
 			if callSignal != nil {
 				m.obs[i].CallSignal = *callSignal
 			}
@@ -69,6 +73,161 @@ func (m *MemStore) UpdateObservation(ctx context.Context, id int64, callSignal, 
 		}
 	}
 	return fmt.Errorf("observación %d no encontrada", id)
+}
+
+func (m *MemStore) ObservationHistory(ctx context.Context, f ObservationHistoryFilter) (ObservationHistoryPage, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if f.Limit <= 0 {
+		f.Limit = 50
+	}
+	if f.Limit > 500 {
+		f.Limit = 500
+	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
+
+	match := func(o Observation) bool {
+		if f.Operator != "" && !strings.EqualFold(o.Operator, f.Operator) {
+			return false
+		}
+		if f.From != nil && o.ObservedAt.Before(*f.From) {
+			return false
+		}
+		if f.To != nil && o.ObservedAt.After(*f.To) {
+			return false
+		}
+		if q := strings.ToLower(strings.TrimSpace(f.Query)); q != "" {
+			fields := []string{
+				strings.ToLower(o.Operator),
+				strings.ToLower(o.OperatorUser),
+				strings.ToLower(o.H3Cell),
+				strings.ToLower(o.ClientIP),
+				strings.ToLower(o.CallSignal),
+				strings.ToLower(o.EffectiveType),
+			}
+			found := false
+			for _, field := range fields {
+				if strings.Contains(field, q) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
+
+	var filtered []Observation
+	for _, o := range m.obs {
+		if match(o) {
+			filtered = append(filtered, o)
+		}
+	}
+
+	sort.Slice(filtered, func(i, j int) bool {
+		if filtered[i].ObservedAt.Equal(filtered[j].ObservedAt) {
+			return filtered[i].ID > filtered[j].ID
+		}
+		return filtered[i].ObservedAt.After(filtered[j].ObservedAt)
+	})
+
+	total := len(filtered)
+	start := f.Offset
+	if start > total {
+		start = total
+	}
+	end := start + f.Limit
+	if end > total {
+		end = total
+	}
+
+	items := make([]ObservationHistoryRow, 0, end-start)
+	for _, o := range filtered[start:end] {
+		items = append(items, observationToHistoryRow(o))
+	}
+
+	return ObservationHistoryPage{
+		Items:  items,
+		Total:  total,
+		Limit:  f.Limit,
+		Offset: start,
+	}, nil
+}
+
+func (m *MemStore) AdminOverview(ctx context.Context) (AdminOverview, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	var latest *time.Time
+	now := time.Now()
+	seenOps := map[string]struct{}{}
+	out := AdminOverview{}
+	for _, o := range m.obs {
+		out.ObservationsTotal++
+		if o.ObservedAt.After(now.Add(-24 * time.Hour)) {
+			out.Observations24h++
+		}
+		if o.ObservedAt.After(now.Add(-7 * 24 * time.Hour)) {
+			out.Observations7d++
+		}
+		if latest == nil || o.ObservedAt.After(*latest) {
+			t := o.ObservedAt
+			latest = &t
+		}
+		if strings.TrimSpace(o.Operator) != "" {
+			seenOps[o.Operator] = struct{}{}
+		}
+	}
+	for _, r := range m.resources {
+		out.ResourcesTotal++
+		switch strings.ToLower(strings.TrimSpace(r.Status)) {
+		case "approved":
+			out.ResourcesApproved++
+		case "rejected":
+			out.ResourcesRejected++
+		default:
+			out.ResourcesPending++
+		}
+	}
+	out.ActiveOperatorsCount = len(seenOps)
+	out.LatestObservationAt = latest
+	return out, nil
+}
+
+func observationToHistoryRow(o Observation) ObservationHistoryRow {
+	return ObservationHistoryRow{
+		ID:                  o.ID,
+		ReceivedAt:          o.ReceivedAt,
+		ObservedAt:          o.ObservedAt,
+		Latitude:            o.Latitude,
+		Longitude:           o.Longitude,
+		Accuracy:            o.Accuracy,
+		H3Cell:              o.H3Cell,
+		ASN:                 o.ASN,
+		Operator:            o.Operator,
+		Mobile:              o.Mobile,
+		HttpRTTMin:          o.HttpRTTMin,
+		HttpRTTMedian:       o.HttpRTTMedian,
+		Jitter:              o.Jitter,
+		SuccessRatio:        o.SuccessRatio,
+		Samples:             o.Samples,
+		FailedRequests:      o.FailedRequests,
+		EffectiveType:       o.EffectiveType,
+		BrowserRTT:          o.BrowserRTT,
+		BrowserDownlink:     o.BrowserDownlink,
+		SaveData:            o.SaveData,
+		CallSignal:          o.CallSignal,
+		OperatorUser:        o.OperatorUser,
+		Probe1kMs:           o.Probe1kMs,
+		Probe4kMs:           o.Probe4kMs,
+		TransferEstimateBps: o.TransferEstimateBps,
+		ClientIP:            o.ClientIP,
+	}
 }
 
 func (m *MemStore) Cells(ctx context.Context, f CellFilter) ([]CellAgg, error) {
@@ -218,8 +377,6 @@ func (m *MemStore) InsertResourceValidation(ctx context.Context, resourceID int6
 	return true, nil
 }
 
-
-
 func (m *MemStore) Coverage(ctx context.Context, municipality, operator, technology string) ([]CoverageRow, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -243,6 +400,41 @@ func (m *MemStore) Coverage(ctx context.Context, municipality, operator, technol
 	}
 	return out, nil
 }
+
+func (m *MemStore) CoverageMeta(ctx context.Context) (*CoverageMeta, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.synthMeta, nil
+}
+
+func (m *MemStore) CoverageSynthesis(ctx context.Context, daneCode string) ([]CoverageSynthesisRow, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []CoverageSynthesisRow
+	for _, r := range m.synthMuni {
+		if r.DaneCode == daneCode {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (m *MemStore) CoveragePoint(ctx context.Context, h3Cell string) ([]CoverageCellRow, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.synthCells[h3Cell], nil
+}
+
+// SetSynthesis carga el snapshot de síntesis de cobertura en memoria
+// (usado por pruebas y por el modo degradado sin PostgreSQL).
+func (m *MemStore) SetSynthesis(rows []CoverageSynthesisRow, cells map[string][]CoverageCellRow, meta *CoverageMeta) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.synthMuni = rows
+	m.synthCells = cells
+	m.synthMeta = meta
+}
+
 
 func (m *MemStore) OfficialSites(ctx context.Context, municipality string) ([]OfficialSitesRow, error) {
 	m.mu.Lock()

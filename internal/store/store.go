@@ -11,6 +11,7 @@ import (
 // Observation es la representación interna, con nombres claros.
 // Se convierte inmediatamente desde el wire format compacto.
 type Observation struct {
+	ID                  int64
 	ReceivedAt          time.Time
 	ObservedAt          time.Time
 	ClientIP            string
@@ -35,6 +36,66 @@ type Observation struct {
 	Probe1kMs           float64
 	Probe4kMs           float64
 	TransferEstimateBps float64
+}
+
+// ObservationHistoryFilter controla la paginación y filtros del panel admin.
+type ObservationHistoryFilter struct {
+	Limit    int
+	Offset   int
+	Operator string
+	Query    string
+	From     *time.Time
+	To       *time.Time
+}
+
+// ObservationHistoryRow es una fila lista para el panel admin.
+type ObservationHistoryRow struct {
+	ID                  int64     `json:"id"`
+	ReceivedAt          time.Time `json:"received_at"`
+	ObservedAt          time.Time `json:"observed_at"`
+	Latitude            float64   `json:"latitude"`
+	Longitude           float64   `json:"longitude"`
+	Accuracy            float64   `json:"accuracy"`
+	H3Cell              string    `json:"h3_cell"`
+	ASN                 *int      `json:"asn,omitempty"`
+	Operator            string    `json:"operator"`
+	Mobile              bool      `json:"mobile"`
+	HttpRTTMin          float64   `json:"http_rtt_min"`
+	HttpRTTMedian       float64   `json:"http_rtt_median"`
+	Jitter              float64   `json:"jitter"`
+	SuccessRatio        float64   `json:"success_ratio"`
+	Samples             int       `json:"samples"`
+	FailedRequests      int       `json:"failed_requests"`
+	EffectiveType       string    `json:"effective_type"`
+	BrowserRTT          float64   `json:"browser_rtt"`
+	BrowserDownlink     float64   `json:"browser_downlink"`
+	SaveData            bool      `json:"save_data"`
+	CallSignal          string    `json:"call_signal"`
+	OperatorUser        string    `json:"operator_user"`
+	Probe1kMs           float64   `json:"probe_1k_ms"`
+	Probe4kMs           float64   `json:"probe_4k_ms"`
+	TransferEstimateBps float64   `json:"transfer_estimate_bps"`
+	ClientIP            string    `json:"client_ip"`
+}
+
+type ObservationHistoryPage struct {
+	Items  []ObservationHistoryRow `json:"items"`
+	Total  int                     `json:"total"`
+	Limit  int                     `json:"limit"`
+	Offset int                     `json:"offset"`
+}
+
+// AdminOverview resume el estado operacional para el panel admin.
+type AdminOverview struct {
+	ObservationsTotal    int        `json:"observations_total"`
+	Observations24h      int        `json:"observations_24h"`
+	Observations7d       int        `json:"observations_7d"`
+	LatestObservationAt  *time.Time `json:"latest_observation_at,omitempty"`
+	ResourcesTotal       int        `json:"resources_total"`
+	ResourcesPending     int        `json:"resources_pending"`
+	ResourcesApproved    int        `json:"resources_approved"`
+	ResourcesRejected    int        `json:"resources_rejected"`
+	ActiveOperatorsCount int        `json:"active_operators_count"`
 }
 
 type CellFilter struct {
@@ -62,12 +123,12 @@ type CellAgg struct {
 }
 
 type Site struct {
-	Lat, Lon      float64
-	Operator      string
-	Source        string
-	Neighborhood  string
-	Address       string
-	SourceDate    string
+	Lat, Lon     float64
+	Operator     string
+	Source       string
+	Neighborhood string
+	Address      string
+	SourceDate   string
 }
 
 type Resource struct {
@@ -127,6 +188,34 @@ type SismoEvent struct {
 	DetectedAt time.Time `json:"detected_at"`
 }
 
+// CoverageSynthesisRow es la cobertura derivada de los mapas públicos de
+// los operadores para un municipio/tecnología: fracción del área municipal
+// cubierta según el mapa que cada operador publica (no es el baseline CRC).
+type CoverageSynthesisRow struct {
+	DaneCode     string  `json:"dane_code"`
+	Department   string  `json:"department"`
+	Municipality string  `json:"municipality"`
+	Operator     string  `json:"operator"`
+	Technology   string  `json:"technology"`
+	CoveredRatio float64 `json:"covered_ratio"`
+	CoveredKM2   float64 `json:"covered_km2"`
+	AreaKM2      float64 `json:"area_km2"`
+}
+
+// CoverageCellRow es la cobertura declarada por un operador/tecnología en
+// una celda H3 (res 7).
+type CoverageCellRow struct {
+	Operator   string `json:"operator"`
+	Technology string `json:"technology"`
+}
+
+// CoverageMeta describe la última carga de síntesis de cobertura.
+type CoverageMeta struct {
+	GeneratedAt time.Time `json:"generated_at"`
+	Source      string    `json:"source"`
+	H3Res       int       `json:"h3_res"`
+}
+
 // PushSubscription es una suscripción Web Push (endpoint + claves).
 type PushSubscription struct {
 	Endpoint  string    `json:"endpoint"`
@@ -140,6 +229,8 @@ type Store interface {
 	InsertObservation(ctx context.Context, o Observation) (int64, error)
 	UpdateObservation(ctx context.Context, id int64, callSignal, operatorUser *string) error
 	InsertObservations(ctx context.Context, obs []Observation) error
+	ObservationHistory(ctx context.Context, f ObservationHistoryFilter) (ObservationHistoryPage, error)
+	AdminOverview(ctx context.Context) (AdminOverview, error)
 	Cells(ctx context.Context, f CellFilter) ([]CellAgg, error)
 	Sites(ctx context.Context, f CellFilter) ([]Site, error)
 	SitesByCell(ctx context.Context) (map[string]int, error)
@@ -152,6 +243,14 @@ type Store interface {
 	// municipality se filtra como substring (case-insensitive); vacío = todo.
 	Coverage(ctx context.Context, municipality, operator, technology string) ([]CoverageRow, error)
 	OfficialSites(ctx context.Context, municipality string) ([]OfficialSitesRow, error)
+
+	// Síntesis de cobertura derivada de los mapas públicos de operadores.
+	// CoverageSynthesis devuelve todas las filas de un municipio (dane_code).
+	// CoveragePoint devuelve los operadores/tecnologías que declaran
+	// cobertura en una celda H3 res 7.
+	CoverageSynthesis(ctx context.Context, daneCode string) ([]CoverageSynthesisRow, error)
+	CoveragePoint(ctx context.Context, h3Cell string) ([]CoverageCellRow, error)
+	CoverageMeta(ctx context.Context) (*CoverageMeta, error)
 
 	// Sismos y notificaciones push.
 	// InsertSismoEvents guarda eventos nuevos (por id) y devuelve solo los insertados.

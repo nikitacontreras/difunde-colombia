@@ -46,6 +46,9 @@ function apiFetch(input, init) {
 (function () {
   var map = L.map("map", { zoomControl: false }).setView([4.57, -74.07], 6);
   L.control.zoom({ position: "topright" }).addTo(map);
+  map.createPane("coveragePane");
+  map.getPane("coveragePane").style.zIndex = 260;
+  map.getPane("coveragePane").style.pointerEvents = "none";
 
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -59,6 +62,346 @@ function apiFetch(input, init) {
     setTimeout(function () { t.style.display = "none"; }, 4000);
   }
 
+  function coverageProviderById(id) {
+    if (!coverageCatalog || !coverageCatalog.providers) return null;
+    id = String(id || "").toLowerCase();
+    for (var i = 0; i < coverageCatalog.providers.length; i++) {
+      var provider = coverageCatalog.providers[i];
+      if ((provider.id || "").toLowerCase() === id) return provider;
+    }
+    return null;
+  }
+
+  function coverageTechnologyById(provider, id) {
+    if (!provider || !provider.technologies) return null;
+    id = String(id || "").toLowerCase();
+    for (var i = 0; i < provider.technologies.length; i++) {
+      var tech = provider.technologies[i];
+      if ((tech.id || "").toLowerCase() === id) return tech;
+    }
+    return null;
+  }
+
+  function coverageStatsLine(provider) {
+    if (!provider || !provider.stats) return "";
+    var bits = [];
+    if (provider.stats.departments) bits.push(provider.stats.departments + " departamentos");
+    if (provider.stats.municipalities) bits.push(provider.stats.municipalities + " municipios");
+    if (provider.stats.cities) bits.push(provider.stats.cities + " ciudades");
+    if (provider.stats.localities) bits.push(provider.stats.localities + " localidades");
+    if (provider.stats.admins) bits.push(provider.stats.admins + " admins");
+    if (provider.stats.layers) bits.push(provider.stats.layers + " capas");
+    if (provider.stats.tile_matrix_sets) bits.push(provider.stats.tile_matrix_sets + " tile matrix sets");
+    if (provider.stats.overlays) bits.push(provider.stats.overlays + " overlays");
+    return bits.join(" · ");
+  }
+
+  function clearCoverageLayer() {
+    if (coverageAbortController) {
+      coverageAbortController.abort();
+      coverageAbortController = null;
+    }
+    if (coverageTileLayer) {
+      map.removeLayer(coverageTileLayer);
+      coverageTileLayer = null;
+    }
+    coverageOverlayGroup.clearLayers();
+    coverageLoadedBounds = null;
+    coverageActiveKey = "";
+  }
+
+  function coverageSyncUI(provider, tech) {
+    if (!coverageSummaryEl || !coverageInfoEl || !coverageWarningEl) return;
+    if (!provider || !tech) {
+      coverageSummaryEl.textContent = "Selecciona un proveedor para ver la cobertura oficial.";
+      coverageInfoEl.textContent = "";
+      coverageWarningEl.style.display = "none";
+      return;
+    }
+    var summary = provider.name + " · " + tech.name;
+    if (tech.render_type) {
+      summary += " · " + tech.render_type.toUpperCase();
+    }
+    coverageSummaryEl.textContent = summary;
+
+    var lines = [];
+    if (provider.updated_at) lines.push("Actualizado: " + provider.updated_at);
+    var statsLine = coverageStatsLine(provider);
+    if (statsLine) lines.push(statsLine);
+    if (tech.overlay_count) lines.push(tech.overlay_count + " overlays georreferenciados");
+    if (tech.tile_url_templates && tech.tile_url_templates.length) {
+      lines.push(tech.tile_url_templates.length + " template(s) de tiles");
+    }
+    if (tech.source_urls && tech.source_urls.length) {
+      lines.push(tech.source_urls.length + " URL(s) fuente");
+    }
+    if (tech.notes && tech.notes.length) {
+      lines.push(tech.notes[0]);
+    } else if (provider.notes && provider.notes.length) {
+      lines.push(provider.notes[0]);
+    }
+    coverageInfoEl.innerHTML = lines.map(function (line) {
+      return "<div style='margin-bottom:4px;'>" + line + "</div>";
+    }).join("");
+
+    var sourceHref = provider.public_page || provider.map_page || "#";
+    coverageSourceLink.href = sourceHref;
+    coverageSourceLink.style.pointerEvents = sourceHref === "#" ? "none" : "auto";
+    coverageSourceLink.style.opacity = sourceHref === "#" ? "0.5" : "1";
+
+    var mapHref = provider.map_page || provider.public_page || "#";
+    coverageMapLink.href = mapHref;
+    coverageMapLink.style.pointerEvents = mapHref === "#" ? "none" : "auto";
+    coverageMapLink.style.opacity = mapHref === "#" ? "0.5" : "1";
+
+    if (tech.renderable) {
+      coverageWarningEl.style.display = "none";
+      coverageWarningEl.textContent = "";
+      coverageEnabledToggle.disabled = false;
+    } else {
+      coverageWarningEl.style.display = "block";
+      coverageWarningEl.textContent = "Esta fuente publica por WMTS y por ahora queda catalogada, no superpuesta automáticamente.";
+      coverageEnabledToggle.checked = false;
+      coverageEnabledToggle.disabled = true;
+      coverageEnabled = false;
+      clearCoverageLayer();
+    }
+  }
+
+  function rebuildCoverageProviderOptions(selectedProviderId, selectedTechId) {
+    if (!coverageProviderSelect || !coverageTechnologySelect) return;
+    coverageProviderSelect.innerHTML = "";
+    if (!coverageCatalog || !coverageCatalog.providers || !coverageCatalog.providers.length) {
+      var emptyOpt = document.createElement("option");
+      emptyOpt.value = "";
+      emptyOpt.textContent = "Sin catálogo disponible";
+      coverageProviderSelect.appendChild(emptyOpt);
+      coverageTechnologySelect.innerHTML = "";
+      var emptyTech = document.createElement("option");
+      emptyTech.value = "";
+      emptyTech.textContent = "Sin capas disponibles";
+      coverageTechnologySelect.appendChild(emptyTech);
+      coverageSyncUI(null, null);
+      return;
+    }
+
+    for (var i = 0; i < coverageCatalog.providers.length; i++) {
+      var provider = coverageCatalog.providers[i];
+      var opt = document.createElement("option");
+      opt.value = provider.id;
+      opt.textContent = provider.name;
+      coverageProviderSelect.appendChild(opt);
+    }
+
+    var provider = coverageProviderById(selectedProviderId) || coverageCatalog.providers[0];
+    coverageProviderSelect.value = provider.id;
+    rebuildCoverageTechnologyOptions(provider, selectedTechId);
+    coverageSyncUI(provider, coverageTechnologyById(provider, coverageTechnologySelect.value));
+  }
+
+  function rebuildCoverageTechnologyOptions(provider, selectedTechId) {
+    if (!coverageTechnologySelect) return;
+    coverageTechnologySelect.innerHTML = "";
+    var technologies = (provider && provider.technologies) || [];
+    if (!technologies.length) {
+      var empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "Sin tecnologías";
+      coverageTechnologySelect.appendChild(empty);
+      return;
+    }
+
+    for (var i = 0; i < technologies.length; i++) {
+      var tech = technologies[i];
+      var opt = document.createElement("option");
+      opt.value = tech.id;
+      opt.textContent = tech.name + (tech.renderable ? "" : " · WMTS");
+      coverageTechnologySelect.appendChild(opt);
+    }
+
+    var tech = coverageTechnologyById(provider, selectedTechId) || technologies[0];
+    coverageTechnologySelect.value = tech.id;
+  }
+
+  function coverageCurrentTileTemplate(provider, tech) {
+    if (!provider || !tech || !tech.tile_url_templates || !tech.tile_url_templates.length) return "";
+    if ((provider.id || "").toLowerCase() === "tigo" && tech.tile_url_templates.length > 1) {
+      return map.getZoom() >= 12 ? tech.tile_url_templates[1] : tech.tile_url_templates[0];
+    }
+    return tech.tile_url_templates[0];
+  }
+
+  function applyCoverageTileLayer(provider, tech) {
+    var template = coverageCurrentTileTemplate(provider, tech);
+    if (!template) {
+      clearCoverageLayer();
+      coverageSyncUI(provider, tech);
+      return;
+    }
+    var key = provider.id + ":" + tech.id + ":" + template;
+    if (coverageActiveKey === key && coverageTileLayer) {
+      coverageSyncUI(provider, tech);
+      return;
+    }
+    clearCoverageLayer();
+    coverageTileLayer = L.tileLayer(template, {
+      pane: "coveragePane",
+      opacity: 0.52,
+      maxZoom: 19,
+      minZoom: 3,
+      updateWhenIdle: true,
+      keepBuffer: 2,
+      crossOrigin: true,
+      attribution: provider.name + " cobertura oficial"
+    }).addTo(map);
+    coverageActiveKey = key;
+    coverageSyncUI(provider, tech);
+  }
+
+  function applyCoverageMovistar(provider, tech, force) {
+    var zoom = map.getZoom();
+    if (zoom < 7) {
+      clearCoverageLayer();
+      coverageSyncUI(provider, tech);
+      coverageInfoEl.innerHTML += "<div style='margin-top:6px;color:#fbbf24;'>Haz zoom para cargar overlays de Movistar.</div>";
+      return;
+    }
+
+    var bounds = map.getBounds();
+    var boundsKey = [
+      bounds.getWest().toFixed(4),
+      bounds.getSouth().toFixed(4),
+      bounds.getEast().toFixed(4),
+      bounds.getNorth().toFixed(4)
+    ].join(",");
+
+    if (!force && coverageLoadedBounds && coverageLoadedBounds.contains(bounds) && coverageActiveKey === provider.id + ":" + tech.id + ":" + boundsKey) {
+      coverageSyncUI(provider, tech);
+      return;
+    }
+
+    if (coverageAbortController) {
+      coverageAbortController.abort();
+    }
+    var requestController = new AbortController();
+    coverageAbortController = requestController;
+
+    var url = "/coverage/overlays?provider=" + encodeURIComponent(provider.id) +
+      "&technology=" + encodeURIComponent(tech.id) +
+      "&bbox=" + encodeURIComponent([
+        bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()
+      ].join(","));
+
+    coverageSummaryEl.textContent = provider.name + " · " + tech.name + " · cargando overlays...";
+    coverageInfoEl.innerHTML = "";
+
+    apiFetch(url, { cache: "no-store", signal: requestController.signal })
+      .then(function (r) {
+        if (!r.ok) throw new Error("bad_response");
+        return r.json();
+      })
+      .then(function (payload) {
+        if (coverageAbortController !== requestController) return;
+        if (!payload || !payload.overlays) return;
+        clearCoverageLayer();
+        coverageOverlayGroup.clearLayers();
+        payload.overlays.forEach(function (ov) {
+          if (!ov || !ov.bbox || !ov.url) return;
+          var overlay = L.imageOverlay(ov.url, [
+            [ov.bbox.south, ov.bbox.west],
+            [ov.bbox.north, ov.bbox.east]
+          ], {
+            pane: "coveragePane",
+            opacity: 0.54,
+            interactive: false,
+            crossOrigin: true
+          });
+          coverageOverlayGroup.addLayer(overlay);
+        });
+        coverageLoadedBounds = bounds;
+        coverageActiveKey = provider.id + ":" + tech.id + ":" + boundsKey;
+        coverageSyncUI(provider, tech);
+        if (payload.count === 0) {
+          coverageWarningEl.style.display = "block";
+          coverageWarningEl.textContent = "No hay overlays de Movistar dentro del viewport actual.";
+        }
+      })
+      .catch(function () {
+        if (coverageAbortController !== requestController || requestController.signal.aborted) return;
+        coverageWarningEl.style.display = "block";
+        coverageWarningEl.textContent = "No se pudieron cargar los overlays de Movistar para este viewport.";
+      });
+  }
+
+  function syncCoverageLayer(force) {
+    if (!coverageCatalog) return;
+    var provider = coverageProviderById(coverageProviderId) || coverageCatalog.providers[0];
+    if (!provider) {
+      clearCoverageLayer();
+      coverageSyncUI(null, null);
+      return;
+    }
+    var tech = coverageTechnologyById(provider, coverageTechnologyId) || provider.technologies[0];
+    if (!tech) {
+      clearCoverageLayer();
+      coverageSyncUI(provider, null);
+      return;
+    }
+
+    coverageProviderId = provider.id;
+    coverageTechnologyId = tech.id;
+
+    if (coverageProviderSelect && coverageProviderSelect.value !== provider.id) {
+      coverageProviderSelect.value = provider.id;
+    }
+    if (coverageTechnologySelect && coverageTechnologySelect.value !== tech.id) {
+      coverageTechnologySelect.value = tech.id;
+    }
+
+    if (!coverageEnabled || !tech.renderable) {
+      clearCoverageLayer();
+      coverageSyncUI(provider, tech);
+      return;
+    }
+
+    if ((provider.id || "").toLowerCase() === "movistar" || tech.render_type === "image-overlays") {
+      applyCoverageMovistar(provider, tech, !!force);
+      return;
+    }
+    if (tech.render_type === "xyz-tiles") {
+      applyCoverageTileLayer(provider, tech);
+      return;
+    }
+    clearCoverageLayer();
+    coverageSyncUI(provider, tech);
+  }
+
+  function loadCoverageCatalog() {
+    if (!coverageSummaryEl) return;
+    coverageSummaryEl.textContent = "Cargando catálogo de cobertura...";
+    apiFetch("/coverage/providers", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("bad_response");
+        return r.json();
+      })
+      .then(function (catalog) {
+        coverageCatalog = catalog || { providers: [] };
+        var providerId = coverageCatalog.providers && coverageCatalog.providers[0] ? coverageCatalog.providers[0].id : "";
+        rebuildCoverageProviderOptions(providerId, "");
+        coverageEnabledToggle.disabled = false;
+        syncCoverageLayer(true);
+      })
+      .catch(function () {
+        coverageSummaryEl.textContent = "No se pudo cargar el catálogo oficial de cobertura.";
+        if (coverageInfoEl) coverageInfoEl.textContent = "";
+        if (coverageWarningEl) {
+          coverageWarningEl.style.display = "block";
+          coverageWarningEl.textContent = "La API de cobertura no respondió.";
+        }
+        if (coverageEnabledToggle) coverageEnabledToggle.disabled = true;
+      });
+  }
+
   var COLOR = { "OPERATIVO": "#2ecc71", "DEGRADADO": "#f1c40f", "AFECTACION_PROBABLE": "#e74c3c" };
   var RADIUS = { "OPERATIVO": 9, "DEGRADADO": 12, "AFECTACION_PROBABLE": 16 };
 
@@ -69,6 +412,31 @@ function apiFetch(input, init) {
   var selectedResource = null;
   var isPickingLocation = false;
   var pickedLatLng = null;
+
+  // Últimos bounds cargados por loader (para no re-pedir si el viewport
+  // sigue dentro de lo ya cargado) y debounce de refresco al mover el mapa.
+  var loadedBounds = {};
+  var refreshTimer = null;
+
+  var coverageCatalog = null;
+  var coverageEnabled = false;
+  var coverageProviderId = "";
+  var coverageTechnologyId = "";
+  var coverageTileLayer = null;
+  var coverageOverlayGroup = L.layerGroup().addTo(map);
+  var coverageAbortController = null;
+  var coverageLoadedBounds = null;
+  var coverageActiveKey = "";
+  var coverageRefreshTimer = null;
+
+  var coverageProviderSelect = document.getElementById("coverage-provider");
+  var coverageTechnologySelect = document.getElementById("coverage-tech");
+  var coverageEnabledToggle = document.getElementById("coverage-enabled");
+  var coverageSummaryEl = document.getElementById("coverage-summary");
+  var coverageInfoEl = document.getElementById("coverage-info");
+  var coverageWarningEl = document.getElementById("coverage-warning");
+  var coverageSourceLink = document.getElementById("coverage-source-link");
+  var coverageMapLink = document.getElementById("coverage-map-link");
 
   // Connectivity Layers
   var cellLayer = L.geoJSON(null, {
@@ -689,7 +1057,7 @@ function apiFetch(input, init) {
         toast("Reporte enviado exitosamente");
         document.getElementById("add-point-modal").classList.remove("open");
         document.getElementById("add-point-form").reset();
-        refresh();
+        refresh(true);
       } else {
         toast("Error al registrar el reporte.");
       }
@@ -772,19 +1140,21 @@ function apiFetch(input, init) {
       userLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       map.setView([userLatLng.lat, userLatLng.lng], 14);
       L.marker([userLatLng.lat, userLatLng.lng]).addTo(map).bindPopup("Tu ubicación actual").openPopup();
-      refresh();
+      refresh(true);
     }, function () {
       toast("No se pudo obtener ubicación para centrar el mapa.");
     }, { enableHighAccuracy: true, timeout: 8000 });
   }
 
-  function loadCells() {
+  function loadCells(force) {
     var b = map.getBounds();
+    if (!force && loadedBounds.cells && loadedBounds.cells.contains(b)) return;
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
     var op = document.getElementById("op").value;
     var win = document.getElementById("win").value;
     var u = "/cells?bbox=" + encodeURIComponent(bbox) + "&window=" + win + "&operator=" + encodeURIComponent(op);
     apiFetch(u, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (cells) {
+      loadedBounds.cells = b;
       var fc = { type: "FeatureCollection", features: [] };
       cells.forEach(function (c) {
         if (!COLOR[c.s]) return;
@@ -797,20 +1167,24 @@ function apiFetch(input, init) {
     }).catch(function () {});
   }
 
-  function loadSites() {
+  function loadSites(force) {
     if (!document.getElementById("sites").checked) {
       sitesClusterGroup.clearLayers();
       sitesLayer.clearLayers();
+      delete loadedBounds.sites;
       return;
     }
     if (map.getZoom() < 12) {
       sitesClusterGroup.clearLayers();
       sitesLayer.clearLayers();
+      delete loadedBounds.sites;
       return;
     }
     var b = map.getBounds();
+    if (!force && loadedBounds.sites && loadedBounds.sites.contains(b)) return;
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
     apiFetch("/sites?bbox=" + encodeURIComponent(bbox), { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (sites) {
+      loadedBounds.sites = b;
       sitesClusterGroup.clearLayers();
       var markers = [];
       sites.forEach(function (s) {
@@ -833,11 +1207,13 @@ function apiFetch(input, init) {
     }).catch(function () {});
   }
 
-  function loadResources() {
+  function loadResources(force) {
     var b = map.getBounds();
+    if (!force && loadedBounds.resources && loadedBounds.resources.contains(b)) return;
     var bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].join(",");
     var url = "/resources?bbox=" + encodeURIComponent(bbox);
     apiFetch(url, { cache: "no-store" }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (resList) {
+      loadedBounds.resources = b;
       allResources = resList.filter(function (r) { return r.Status === "approved"; });
       
       // Update UI elements
@@ -911,6 +1287,30 @@ function apiFetch(input, init) {
     };
   }
 
+  function periodicRefreshDelayMs() {
+    var c = connection();
+    if (!c) return 60000;
+    if (c.sd || /2g/.test(c.e)) return 300000;
+    if (c.e === "3g") return 120000;
+    return 60000;
+  }
+
+  function shouldForcePeriodicRefresh() {
+    var c = connection();
+    if (!c) return true;
+    return !(c.sd || /2g/.test(c.e));
+  }
+
+  var periodicRefreshTimer = null;
+
+  function schedulePeriodicRefresh() {
+    clearTimeout(periodicRefreshTimer);
+    periodicRefreshTimer = setTimeout(function () {
+      refresh(shouldForcePeriodicRefresh());
+      schedulePeriodicRefresh();
+    }, periodicRefreshDelayMs());
+  }
+
   document.getElementById("btn-run-test").addEventListener("click", async function() {
     var btn = document.getElementById("btn-run-test");
     var statusEl = document.getElementById("test-status");
@@ -974,7 +1374,7 @@ function apiFetch(input, init) {
         var rttVal = Math.round(median(probes.samples));
         statusEl.textContent = "¡Medición completada! RTT medio: " + rttVal + " ms";
         followupEl.style.display = "flex";
-        refresh();
+        refresh(true);
       } else {
         statusEl.textContent = "Error al registrar medición.";
       }
@@ -1006,73 +1406,6 @@ function apiFetch(input, init) {
       toast("¡Gracias! Reporte de señal registrado.");
     });
   });
-
-  // Admin key initialization and events
-  var urlParams = new URLSearchParams(window.location.search);
-  var adminKey = urlParams.get("adminkey");
-  if (adminKey) {
-    window.IS_ADMIN = true;
-    window.ADMIN_KEY = adminKey;
-    
-    // Add PENDIENTES tab button dynamically
-    var tabsDiv = document.querySelector(".tabs-container");
-    if (tabsDiv) {
-      var btn = document.createElement("button");
-      btn.className = "tab-btn";
-      btn.setAttribute("data-tab", "pending");
-      btn.innerHTML = "PENDIENTES <span id='count-pending'>0</span>";
-      tabsDiv.appendChild(btn);
-      
-      btn.addEventListener("click", function() {
-        document.querySelectorAll(".tab-btn").forEach(function (b) { b.classList.remove("active"); });
-        btn.classList.add("active");
-        currentTab = "pending";
-        renderReportList();
-      });
-    }
-
-    document.getElementById("btn-admin-approve").addEventListener("click", function() {
-      if (!selectedResource) return;
-      apiFetch("/o/moderate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: selectedResource.ID, status: "approved" })
-      }).then(function(r) {
-        if (r.ok) {
-          toast("Reporte aprobado con éxito.");
-          document.getElementById("admin-resource-status").textContent = "approved";
-          document.getElementById("admin-resource-status").style.color = "#10b981";
-          selectedResource.Status = "approved";
-          refresh();
-        } else {
-          toast("Error al moderar el reporte.");
-        }
-      }).catch(function() {
-        toast("Error de red al moderar el reporte.");
-      });
-    });
-
-    document.getElementById("btn-admin-reject").addEventListener("click", function() {
-      if (!selectedResource) return;
-      apiFetch("/o/moderate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: selectedResource.ID, status: "rejected" })
-      }).then(function(r) {
-        if (r.ok) {
-          toast("Reporte rechazado con éxito.");
-          document.getElementById("admin-resource-status").textContent = "rejected";
-          document.getElementById("admin-resource-status").style.color = "#ef4444";
-          selectedResource.Status = "rejected";
-          refresh();
-        } else {
-          toast("Error al moderar el reporte.");
-        }
-      }).catch(function() {
-        toast("Error de red al moderar el reporte.");
-      });
-    });
-  }
 
   async function runAutomaticConnectivityTest() {
     var statusEl = document.getElementById("test-status");
@@ -1141,7 +1474,7 @@ function apiFetch(input, init) {
         var rttVal = Math.round(median(probes.samples));
         statusEl.textContent = "¡Medición completada! RTT medio: " + rttVal + " ms";
         followupEl.style.display = "flex";
-        refresh();
+        refresh(true);
       } else {
         statusEl.textContent = "Error al registrar medición.";
       }
@@ -1158,9 +1491,23 @@ function apiFetch(input, init) {
     });
   }
 
-  function refresh() { loadCells(); loadSites(); loadResources(); }
+  // force=true ignora el skip por viewport (acciones explícitas y refresco periódico).
+  function refresh(force) { loadCells(force); loadSites(force); loadResources(force); }
+
+  // Al mover/zoom el mapa, debounce 300ms y el skip por bounds ya cargado
+  // evitan disparar requests por cada nivel de zoom.
+  function scheduleRefresh() {
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(function () {
+      refreshTimer = null;
+      refresh();
+      syncCoverageLayer(false);
+    }, 300);
+  }
+
   refresh();
-  map.on("moveend", refresh);
+  loadCoverageCatalog();
+  map.on("moveend", scheduleRefresh);
 
   // Disclaimer and auto-run logic
   var disclaimerAccepted = localStorage.getItem("disclaimer_accepted");
@@ -1179,8 +1526,8 @@ function apiFetch(input, init) {
   }
   
   // Wire filters
-  document.getElementById("op").addEventListener("change", refresh);
-  document.getElementById("win").addEventListener("change", refresh);
+  document.getElementById("op").addEventListener("change", function () { refresh(true); });
+  document.getElementById("win").addEventListener("change", function () { refresh(true); });
   document.getElementById("sites").addEventListener("change", function () {
     if (this.checked && map.getZoom() < 12) {
       toast("Haz zoom para visualizar las antenas móviles");
@@ -1194,8 +1541,25 @@ function apiFetch(input, init) {
       map.removeLayer(resourceMarkersGroup);
     }
   });
+  coverageProviderSelect.addEventListener("change", function () {
+    if (!coverageCatalog) return;
+    coverageProviderId = this.value;
+    var provider = coverageProviderById(coverageProviderId);
+    coverageTechnologyId = "";
+    rebuildCoverageTechnologyOptions(provider, "");
+    coverageTechnologyId = coverageTechnologySelect.value;
+    syncCoverageLayer(true);
+  });
+  coverageTechnologySelect.addEventListener("change", function () {
+    coverageTechnologyId = this.value;
+    syncCoverageLayer(true);
+  });
+  coverageEnabledToggle.addEventListener("change", function () {
+    coverageEnabled = this.checked;
+    syncCoverageLayer(true);
+  });
 
-  setInterval(refresh, 60000);
+  schedulePeriodicRefresh();
   setTimeout(function() { map.invalidateSize(); }, 200);
 
   function initSismoAlerts() {

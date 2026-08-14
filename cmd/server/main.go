@@ -56,6 +56,12 @@ func run() error {
 			dir = os.Args[2]
 		}
 		return runImport(cfg, dir)
+	case "import-synthesis":
+		dir := "./data"
+		if len(os.Args) > 2 {
+			dir = os.Args[2]
+		}
+		return runImportSynthesis(cfg, dir)
 	case "load-mapping":
 		path := cfg.AsnMappingCSV
 		if len(os.Args) > 2 {
@@ -207,6 +213,28 @@ func runImport(cfg config.Config, dir string) error {
 	}
 	b, _ := json.MarshalIndent(rep, "", "  ")
 	fmt.Println(string(b))
+	return nil
+}
+
+func runImportSynthesis(cfg config.Config, dir string) error {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := connectDB(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	if err := applyMigrations(ctx, pool); err != nil {
+		return fmt.Errorf("migraciones: %w", err)
+	}
+
+	muni, cells, err := importer.ImportSynthesis(ctx, pool, dir)
+	if err != nil {
+		return fmt.Errorf("importar síntesis: %w", err)
+	}
+	fmt.Printf("Síntesis cargada: %d filas municipales, %d celdas H3\n", muni, cells)
 	return nil
 }
 

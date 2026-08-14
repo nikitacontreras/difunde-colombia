@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#08111f">
+<title>Colombia Difunde · Admin</title>
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+<div class="shell">
+  <div class="shell-bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand-block">
+      <span class="eyebrow">Panel administrativo</span>
+      <h1>Colombia Difunde</h1>
+      <p>Moderación, histórico de observaciones y control operativo desde un solo lugar.</p>
+    </div>
+    <div class="topbar-actions">
+      <div class="session-pill" id="session-pill">sesión inactiva</div>
+      <a class="ghost-button" href="/map">Abrir mapa</a>
+      <button class="ghost-button" id="btn-refresh" type="button">Actualizar</button>
+      <button class="ghost-button danger" id="btn-logout" type="button">Salir</button>
+    </div>
+  </header>
+
+  <main id="dashboard" class="dashboard" hidden>
+    <section class="summary-grid" aria-label="Resumen operativo">
+      <article class="metric-card">
+        <span class="metric-label">Observaciones</span>
+        <strong id="stat-observations">0</strong>
+        <span id="stat-observations-sub" class="metric-sub">histórico total</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Últimas 24 h</span>
+        <strong id="stat-24h">0</strong>
+        <span class="metric-sub">observaciones recientes</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Recursos</span>
+        <strong id="stat-resources">0</strong>
+        <span id="stat-resources-sub" class="metric-sub">publicados y pendientes</span>
+      </article>
+      <article class="metric-card">
+        <span class="metric-label">Activos</span>
+        <strong id="stat-operators">0</strong>
+        <span id="stat-updated" class="metric-sub">sin actualización aún</span>
+      </article>
+    </section>
+
+    <section class="toolbar">
+      <div class="tabs" role="tablist" aria-label="Secciones admin">
+        <button class="tab-button active" type="button" data-tab="observations">Observaciones</button>
+        <button class="tab-button" type="button" data-tab="resources">Recursos</button>
+      </div>
+
+      <div class="filter-bar">
+        <label>
+          Buscar
+          <input id="search-input" type="search" placeholder="ID, operador, H3, IP, call signal">
+        </label>
+        <label>
+          Operador
+          <input id="operator-input" type="search" placeholder="claro, movistar...">
+        </label>
+        <label>
+          Límite
+          <select id="limit-select">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="content-stack">
+        <section class="panel active" id="panel-observations" aria-label="Histórico de observaciones">
+          <div class="panel-head">
+            <div>
+              <h2>Histórico de observaciones</h2>
+              <p id="observations-meta">Cargando...</p>
+            </div>
+            <div class="panel-actions">
+              <button class="ghost-button compact" id="btn-prev-page" type="button">Anterior</button>
+              <button class="ghost-button compact" id="btn-next-page" type="button">Siguiente</button>
+            </div>
+          </div>
+          <div class="table-shell">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Observado</th>
+                  <th>Operador</th>
+                  <th>RTT</th>
+                  <th>Éxito</th>
+                  <th>Señal</th>
+                  <th>Celda</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody id="observations-tbody">
+                <tr><td colspan="8" class="empty-cell">Cargando histórico...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pagination" id="observations-pagination"></div>
+        </section>
+
+        <section class="panel" id="panel-resources" aria-label="Moderación de recursos">
+          <div class="panel-head">
+            <div>
+              <h2>Recursos humanitarios</h2>
+              <p id="resources-meta">Cargando...</p>
+            </div>
+          </div>
+          <div class="resource-grid" id="resources-grid">
+            <div class="empty-state">Cargando recursos...</div>
+          </div>
+        </section>
+      </div>
+
+      <aside class="inspector" aria-label="Detalle seleccionado">
+        <div class="inspector-card">
+          <div class="inspector-head">
+            <span class="inspector-kicker">Detalle</span>
+            <span id="inspector-kind" class="inspector-chip">ninguno</span>
+          </div>
+          <div id="inspector-empty" class="inspector-empty">
+            Selecciona una observación o un recurso para ver el detalle completo.
+          </div>
+          <div id="inspector-content" hidden></div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <section id="auth-gate" class="auth-gate">
+    <div class="auth-card">
+      <span class="eyebrow">Acceso restringido</span>
+      <h2>Desbloquear panel admin</h2>
+      <p>
+        Ingresa el valor del header <code>X-Admin-Key</code>. El servidor lo valida y
+        crea una sesión HttpOnly corta para este navegador.
+      </p>
+      <form id="admin-login-form" class="auth-form">
+        <label>
+          Admin key
+          <input id="admin-key" type="password" autocomplete="current-password" placeholder="••••••••" required>
+        </label>
+        <button type="submit" class="primary-button">Entrar</button>
+      </form>
+      <div id="auth-error" class="auth-error" role="status" aria-live="polite"></div>
+    </div>
+  </section>
+</div>
+
+<script src="/admin.js" defer></script>
+</body>
+</html>

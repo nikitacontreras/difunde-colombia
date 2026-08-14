@@ -97,3 +97,41 @@ func TestMemStoreSyncBatch(t *testing.T) {
 		t.Errorf("sync total = %d, want 5", total)
 	}
 }
+
+func TestMemStoreCoverageSynthesis(t *testing.T) {
+	m := NewMemStore()
+	ctx := context.Background()
+	meta := &CoverageMeta{GeneratedAt: time.Now().UTC(), Source: "test", H3Res: 7}
+	m.SetSynthesis(
+		[]CoverageSynthesisRow{
+			{DaneCode: "11001", Municipality: "Bogotá", Operator: "claro", Technology: "4G", CoveredRatio: 0.9},
+			{DaneCode: "11001", Municipality: "Bogotá", Operator: "wom", Technology: "4G", CoveredRatio: 0.3},
+		},
+		map[string][]CoverageCellRow{
+			"8766009b2ffffff": {{Operator: "claro", Technology: "4G"}},
+		},
+		meta,
+	)
+
+	rows, err := m.CoverageSynthesis(ctx, "11001")
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("CoverageSynthesis = %d filas, err %v; want 2", len(rows), err)
+	}
+	if rows[0].Operator != "claro" || rows[1].Operator != "wom" {
+		t.Errorf("órden de operadores incorrecto: %+v", rows)
+	}
+
+	cells, err := m.CoveragePoint(ctx, "8766009b2ffffff")
+	if err != nil || len(cells) != 1 || cells[0].Operator != "claro" {
+		t.Fatalf("CoveragePoint = %+v, err %v", cells, err)
+	}
+
+	got, err := m.CoverageMeta(ctx)
+	if err != nil || got == nil || got.H3Res != 7 || got.Source != "test" {
+		t.Fatalf("CoverageMeta = %+v, err %v", got, err)
+	}
+
+	if rows, err := m.CoverageSynthesis(ctx, "99999"); err != nil || len(rows) != 0 {
+		t.Errorf("CoverageSynthesis desconocido = %d filas, err %v; want 0", len(rows), err)
+	}
+}
