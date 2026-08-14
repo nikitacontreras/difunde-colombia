@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -134,7 +135,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /coverage/status", s.handleCoverageStatus)
 	s.mux.HandleFunc("GET /resources", s.handleResources)
 	s.mux.HandleFunc("GET /resources/counts", s.handleResourceCounts)
+	s.mux.HandleFunc("GET /resources/{id}", s.handleResource)
 	s.mux.HandleFunc("POST /report", s.handleReport)
+	s.mux.HandleFunc("PUT /resources/{id}", s.handleUpdateResource)
 	s.mux.HandleFunc("POST /resources/update-details", s.handleUpdateResourceDetails)
 	s.mux.HandleFunc("POST /resources/moderate", s.handleModerateResource)
 	s.mux.HandleFunc("GET /api/sismos", s.handleSismosProxy)
@@ -960,6 +963,84 @@ type resourcePayload struct {
 	Details       map[string]any `json:"details"`
 	Status        string         `json:"status"`
 	Nonce         string         `json:"nonce"`
+	OwnerToken    string         `json:"owner_token"`
+}
+
+const resourceEditTokenHeader = "X-Resource-Edit-Token"
+
+func hashResourceOwnerToken(raw string) (string, bool) {
+	decoded, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(raw))
+	if err != nil || len(decoded) != 32 {
+		return "", false
+	}
+	sum := sha256.Sum256(decoded)
+	return hex.EncodeToString(sum[:]), true
+}
+
+func resourceTokenMatches(resource store.Resource, raw string) bool {
+	hash, ok := hashResourceOwnerToken(raw)
+	if !ok || resource.OwnerTokenHash == "" || len(hash) != len(resource.OwnerTokenHash) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(hash), []byte(resource.OwnerTokenHash)) == 1
+}
+
+func mergeEditableResourceDetails(current, submitted map[string]any) map[string]any {
+	merged := make(map[string]any, len(current)+6)
+	for key, value := range current {
+		merged[key] = value
+	}
+	for _, key := range []string{"intent", "urgency", "description", "responsible", "availability", "needs"} {
+		if value, ok := submitted[key]; ok {
+			merged[key] = value
+		}
+	}
+	return merged
+}
+
+func normalizeResourceDetails(details map[string]any) error {
+	stringFields := map[string]int{
+		"intent": 12, "urgency": 12, "description": 2000,
+		"responsible": 120, "availability": 240,
+	}
+	for key, maxLength := range stringFields {
+		value, exists := details[key]
+		if !exists {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("bad details")
+		}
+		text = strings.TrimSpace(text)
+		if len(text) > maxLength {
+			return fmt.Errorf("bad details")
+		}
+		details[key] = text
+	}
+	if intent, _ := details["intent"].(string); intent != "" && intent != "offer" && intent != "request" {
+		return fmt.Errorf("bad intent")
+	}
+	if urgency, _ := details["urgency"].(string); urgency != "" && urgency != "normal" && urgency != "urgente" {
+		return fmt.Errorf("bad urgency")
+	}
+	if rawNeeds, exists := details["needs"]; exists {
+		items, ok := rawNeeds.([]any)
+		if !ok || len(items) > 30 {
+			return fmt.Errorf("bad needs")
+		}
+		needs := make([]string, 0, len(items))
+		for _, item := range items {
+			need, ok := item.(string)
+			need = strings.TrimSpace(need)
+			if !ok || need == "" || len(need) > 80 {
+				return fmt.Errorf("bad needs")
+			}
+			needs = append(needs, need)
+		}
+		details["needs"] = needs
+	}
+	return nil
 }
 
 func resourceFromPayload(body resourcePayload, allowStatus bool) (store.Resource, error) {
@@ -999,8 +1080,8 @@ func resourceFromPayload(body resourcePayload, allowStatus bool) (store.Resource
 	if body.Details == nil {
 		body.Details = map[string]any{}
 	}
-	if intent, ok := body.Details["intent"].(string); ok && intent != "" && intent != "offer" && intent != "request" {
-		return store.Resource{}, fmt.Errorf("bad intent")
+	if err := normalizeResourceDetails(body.Details); err != nil {
+		return store.Resource{}, err
 	}
 	if !allowStatus || body.Status == "" {
 		body.Status = "pending"
@@ -1137,6 +1218,25 @@ func (s *Server) handleResourceCounts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleResource(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/cells", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	resource, err := s.store.ResourceByID(r.Context(), id)
+	if err != nil || (resource.Status != "approved" && !resourceTokenMatches(resource, r.Header.Get(resourceEditTokenHeader))) {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, resource)
+}
+
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if !s.allow("/report", r) {
 		tooManyRequests(w, time.Minute)
@@ -1152,6 +1252,13 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	ownerTokenHash, ok := hashResourceOwnerToken(body.OwnerToken)
+	if !ok {
+		http.Error(w, "invalid owner token", http.StatusBadRequest)
+		return
+	}
+	resource.OwnerTokenHash = ownerTokenHash
+	resource.ReportedAt = time.Now().UTC()
 
 	// Validación de Proof of Work (PoW) local anti-spam
 	if body.Nonce == "" {
@@ -1174,7 +1281,53 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	s.invalidateCaches()
 	w.Header().Set("X-Resource-ID", strconv.FormatInt(id, 10))
-	w.WriteHeader(http.StatusCreated)
+	resource.ID = id
+	writeJSON(w, http.StatusCreated, resource)
+}
+
+func (s *Server) handleUpdateResource(w http.ResponseWriter, r *http.Request) {
+	if !s.allow("/update", r) {
+		tooManyRequests(w, time.Minute)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	current, err := s.store.ResourceByID(r.Context(), id)
+	if err != nil || !resourceTokenMatches(current, r.Header.Get(resourceEditTokenHeader)) {
+		http.NotFound(w, r)
+		return
+	}
+
+	var body resourcePayload
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+	resource, err := resourceFromPayload(body, false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resource.ID = id
+	resource.Status = "pending"
+	resource.ReportedAt = current.ReportedAt
+	resource.OwnerTokenHash = current.OwnerTokenHash
+	resource.Details = mergeEditableResourceDetails(current.Details, resource.Details)
+
+	updated, err := s.store.UpdateResourceByOwner(r.Context(), id, current.OwnerTokenHash, resource)
+	if err != nil {
+		http.Error(w, "storage error", http.StatusServiceUnavailable)
+		return
+	}
+	if !updated {
+		http.NotFound(w, r)
+		return
+	}
+	s.invalidateCaches()
+	writeJSON(w, http.StatusOK, resource)
 }
 
 func (s *Server) handleUpdateResourceDetails(w http.ResponseWriter, r *http.Request) {
@@ -1190,6 +1343,10 @@ func (s *Server) handleUpdateResourceDetails(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "bad payload", http.StatusBadRequest)
 		return
 	}
+	if len(body.Details) != 1 {
+		http.Error(w, "bad details update", http.StatusBadRequest)
+		return
+	}
 	var isVote bool
 	var voteType string
 	if _, ok := body.Details["confirms"]; ok {
@@ -1198,6 +1355,14 @@ func (s *Server) handleUpdateResourceDetails(w http.ResponseWriter, r *http.Requ
 	} else if _, ok := body.Details["dismisses"]; ok {
 		isVote = true
 		voteType = "disprove"
+	}
+	if !isVote {
+		if _, helping := body.Details["helping"]; !helping {
+			if _, needed := body.Details["needed"]; !needed {
+				http.Error(w, "bad details update", http.StatusBadRequest)
+				return
+			}
+		}
 	}
 
 	if isVote {

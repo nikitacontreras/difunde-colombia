@@ -69,6 +69,7 @@ var els = {
   formKind: document.getElementById("resource-kind"),
   formName: document.getElementById("resource-name"),
   formPhone: document.getElementById("resource-phone"),
+  formResponsible: document.getElementById("resource-responsible"),
   formStatus: document.getElementById("resource-status"),
   formMunicipality: document.getElementById("resource-municipality"),
   formDepartment: document.getElementById("resource-department"),
@@ -541,6 +542,7 @@ function selectResource(resource) {
     addDetailRow(container, "Ubicación", resourceLocation(resource));
     addDetailRow(container, "Dirección / zona", resource.Address || "N/D");
     addDetailRow(container, "Teléfono", resource.Phone || "N/D");
+    addDetailRow(container, "Responsable", resource.Details && resource.Details.responsible || "N/D");
     if (resourceScope(resource) === "point") addDetailRow(container, "Coordenadas", formatNumber(resource.Lat, 6) + ", " + formatNumber(resource.Lon, 6));
     addDetailRow(container, "Reportado", formatDate(resource.ReportedAt));
     addDetailRow(container, "Descripción", resource.Details && resource.Details.description || "N/D");
@@ -633,6 +635,7 @@ function editResource(resource) {
   els.formKind.value = resource.Kind;
   els.formName.value = resource.Name || "";
   els.formPhone.value = resource.Phone || "";
+  els.formResponsible.value = resource.Details && resource.Details.responsible || "";
   els.formStatus.value = resourceStatus(resource);
   setScope(resourceScope(resource));
   els.formMunicipality.value = resource.Municipality || "";
@@ -653,6 +656,7 @@ function formPayload() {
   details.intent = els.formIntent.value;
   details.urgency = els.formUrgency.value;
   details.description = els.formDescription.value.trim();
+  details.responsible = els.formResponsible.value.trim();
   details.availability = els.formAvailability.value.trim();
   details.needs = els.formNeeds.value.split(",").map(function (item) { return item.trim(); }).filter(Boolean);
   if (details.helping == null) details.helping = 0;

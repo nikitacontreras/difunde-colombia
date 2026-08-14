@@ -337,6 +337,14 @@ async function solvePoW(kind, name) {
   }
 }
 
+function createResourceEditToken() {
+  var bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  var binary = "";
+  for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 function bindReportForm() {
   $("report-form").addEventListener("submit", async function (e) {
     e.preventDefault();
@@ -352,11 +360,13 @@ function bindReportForm() {
     
     setStatus("Generando prueba de trabajo anti-spam local...");
     var nonce = await solvePoW(kind, name);
+    var ownerToken = createResourceEditToken();
 
     setStatus("Enviando reporte de ayuda...");
     var payload = {
       kind: kind, name: name, address: addr, phone: phone,
-      lat: lastPayload.x, lon: lastPayload.y, details: {}, nonce: nonce
+      lat: lastPayload.x, lon: lastPayload.y, details: {}, nonce: nonce,
+      owner_token: ownerToken
     };
 
     apiFetch("/report", {
@@ -364,8 +374,10 @@ function bindReportForm() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000)
-    }).then(function (r) {
+    }).then(async function (r) {
       if (r.ok) {
+        var resource = await r.json();
+        try { localStorage.setItem("resource_edit_token_" + resource.ID, ownerToken); } catch (e) {}
         setStatus("¡Reporte enviado exitosamente! Queda en verificación por el administrador.", "ok");
         $("report-form").reset();
       } else {

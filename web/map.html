@@ -437,18 +437,6 @@ html, body {
   gap: 8px;
 }
 
-.need-remove {
-  cursor: pointer;
-  color: #9ca3af;
-  font-weight: bold;
-}
-
-.need-input-container {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
-
 /* Action Buttons */
 .action-grid {
   display: grid;
@@ -476,6 +464,32 @@ html, body {
 
 .btn-action-white:hover {
   background: #f9fafb !important;
+}
+
+.btn-action-white:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.btn-action-white[hidden] {
+  display: none !important;
+}
+
+.detail-review-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(22, 163, 74, 0.3);
+  border-radius: 8px;
+  background: rgba(22, 163, 74, 0.08);
+  color: #bbf7d0;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.detail-review-note.pending {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
 }
 
 .btn-status-confirm {
@@ -1042,6 +1056,7 @@ html, body {
             <div class="badge-row" id="detail-card-badges"></div>
             <p id="detail-card-desc" style="font-size: 13.5px; color: var(--text-secondary); margin-top: 10px; line-height: 1.5;"></p>
             <div style="font-size: 12.5px; color: var(--text-secondary); font-weight: 500;" id="detail-card-votes">0 confirman · 0 desmienten</div>
+            <div class="detail-review-note" id="detail-review-note">Información revisada y curada por Colombia Difunde.</div>
           </div>
 
           <div>
@@ -1071,10 +1086,6 @@ html, body {
           <div>
             <div class="detail-section-title">Qué se necesita</div>
             <div class="needs-container" id="detail-card-needs"></div>
-            <div class="need-input-container">
-              <input type="text" id="new-need-input" placeholder="Añadir necesidad..." style="flex:1; background:var(--bg-card); border:1px solid var(--border-color); color:white; border-radius:6px; padding:8px; font-family:inherit; font-size:12px;">
-              <button id="btn-add-need" style="background:var(--accent-color); border:none; color:white; font-weight:bold; border-radius:6px; padding:0 14px; cursor:pointer; font-size:14px;">+</button>
-            </div>
           </div>
 
           <div>
@@ -1085,7 +1096,7 @@ html, body {
             </div>
             <div class="action-grid">
               <button class="btn-action-white" id="btn-add-media" onclick="alert('Funcionalidad próximamente disponible')">+ Foto o vídeo</button>
-              <button class="btn-action-white" id="btn-edit-point" onclick="alert('Funcionalidad próximamente disponible')">Editar</button>
+              <button class="btn-action-white" id="btn-edit-point" hidden>Editar mi reporte</button>
             </div>
             <button class="btn-incorrect" id="btn-vote-disprove">× Esta información no es correcta</button>
           </div>
@@ -1224,7 +1235,7 @@ html, body {
 <div id="add-point-modal">
   <div class="modal-content">
     <div class="modal-header">
-      <h3 class="modal-title">Publicar ayuda u ofrecimiento</h3>
+      <h3 class="modal-title" id="report-form-title">Publicar ayuda u ofrecimiento</h3>
       <button class="modal-close" id="btn-modal-close">×</button>
     </div>
     <form id="add-point-form">
@@ -1285,6 +1296,10 @@ html, body {
         <input type="tel" id="modal-phone" placeholder="Ej. 3001234567">
       </div>
       <div class="form-group">
+        <label>Persona responsable (opcional)</label>
+        <input type="text" id="modal-responsible" maxlength="120" placeholder="Ej. María González">
+      </div>
+      <div class="form-group">
         <label>Urgencia</label>
         <select id="modal-urgency">
           <option value="urgente">Urgente</option>
@@ -1299,7 +1314,8 @@ html, body {
         <label>Etiquetas o necesidades (separadas por comas)</label>
         <input type="text" id="modal-needs" placeholder="Ej. Transporte, Camión, Agua">
       </div>
-      <button type="submit" class="btn-add-point" style="width:100%; margin-top:10px;">ENVIAR REPORTE</button>
+      <p class="form-help" id="report-owner-help">Este navegador guardará localmente un permiso privado para editar el reporte después de enviarlo.</p>
+      <button type="submit" class="btn-add-point" id="btn-submit-report" style="width:100%; margin-top:10px;">ENVIAR REPORTE</button>
     </form>
   </div>
 </div>

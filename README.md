@@ -113,7 +113,9 @@ variables de entorno; sin ellas se usan los defaults.
 | GET | `/coverage/providers` | Catálogo normalizado de capas públicas por operador y tecnología. |
 | GET | `/coverage/overlays?provider=movistar&technology=LTE&bbox=LON1,LAT1,LON2,LAT2` | Overlays KML visibles de Movistar, filtrados por viewport. |
 | GET | `/resources?kind=logistica` | Recursos aprobados; admite alcance puntual o por ciudad. |
-| POST | `/report` | Publica un recurso pendiente (`location_scope=point|city`). |
+| GET | `/resources/{id}` | Obtiene un recurso aprobado para enlaces `/?p={id}`; un pendiente requiere su llave de edición. |
+| POST | `/report` | Publica un recurso pendiente y registra el hash de `owner_token` (`location_scope=point|city`). |
+| PUT | `/resources/{id}` | Edita un reporte propio con `X-Resource-Edit-Token` y lo devuelve a moderación. |
 | GET | `/admin` | Centro de operaciones oculto; requiere `X-Admin-Key`. |
 | GET | `/admin/api/observations` | Histórico paginado y filtrable para administración. |
 | GET/POST | `/admin/api/resources` | Lista completa y alta rápida de recursos. |
@@ -138,6 +140,13 @@ Los ofrecimientos sin punto fijo usan `location_scope: "city"` junto con
 recursos con `location_scope: "point"` conservan `lat` y `lon` y aparecen como
 marcadores en el mapa.
 
+El navegador genera una llave aleatoria de 256 bits al crear cada reporte y la
+guarda localmente. El servidor conserva solo su hash y exige la llave original
+en `X-Resource-Edit-Token` para editar o consultar un reporte propio pendiente.
+No se utiliza la IP ni un fingerprint como credencial de propiedad. Al editar
+un recurso aprobado, su estado vuelve a `pending` hasta que administración lo
+revise nuevamente.
+
 ## Clasificación de estado
 
 Sin ML, con umbrales centralizados (`STATE_*`):
@@ -158,6 +167,8 @@ usan para corregir asignaciones dudosas de operador (`/o/update`).
 - Headers de seguridad (`nosniff`, `no-referrer`), ETag en agregados.
 - Panel administrativo oculto con comparación constante de `X-Admin-Key` y
   respuestas `404` para accesos inválidos.
+- Edición de reportes con llaves aleatorias por recurso; solo se persiste el
+  hash y los accesos inválidos a recursos no públicos responden `404`.
 - Los agregados se cachean en memoria (TTL configurable) para no golpear la DB.
 - La IP nunca se persiste; solo se conservan metadatos de red (ASN/operador).
 

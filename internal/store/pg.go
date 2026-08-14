@@ -421,7 +421,7 @@ func (s *PGStore) Resources(ctx context.Context, f CellFilter, kind string) ([]R
 	query := `SELECT id, kind, COALESCE(name,''), COALESCE(address,''), COALESCE(phone,''),
 			COALESCE(latitude,0), COALESCE(longitude,0),
 			COALESCE(location_scope,'point'), COALESCE(municipality,''), COALESCE(department,''),
-			COALESCE(details, '{}'::jsonb), status, reported_at
+			COALESCE(details, '{}'::jsonb), status, reported_at, COALESCE(owner_token_hash,'')
 		FROM resources
 		WHERE ($1::text IS NULL OR kind = $1)
 		  AND (NOT $2::boolean OR location_scope = 'city'
@@ -443,7 +443,7 @@ func (s *PGStore) Resources(ctx context.Context, f CellFilter, kind string) ([]R
 		var r Resource
 		if err := rows.Scan(&r.ID, &r.Kind, &r.Name, &r.Address, &r.Phone,
 			&r.Lat, &r.Lon, &r.LocationScope, &r.Municipality, &r.Department,
-			&r.Details, &r.Status, &r.ReportedAt); err != nil {
+			&r.Details, &r.Status, &r.ReportedAt, &r.OwnerTokenHash); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -479,6 +479,20 @@ func (s *PGStore) ResourceCounts(ctx context.Context) (ResourceCounts, error) {
 	return out, rows.Err()
 }
 
+func (s *PGStore) ResourceByID(ctx context.Context, id int64) (Resource, error) {
+	var r Resource
+	err := s.pool.QueryRow(ctx, `SELECT id, kind, COALESCE(name,''), COALESCE(address,''), COALESCE(phone,''),
+			COALESCE(latitude,0), COALESCE(longitude,0),
+			COALESCE(location_scope,'point'), COALESCE(municipality,''), COALESCE(department,''),
+			COALESCE(details, '{}'::jsonb), status, reported_at, COALESCE(owner_token_hash,'')
+		FROM resources WHERE id = $1`, id).Scan(
+		&r.ID, &r.Kind, &r.Name, &r.Address, &r.Phone,
+		&r.Lat, &r.Lon, &r.LocationScope, &r.Municipality, &r.Department,
+		&r.Details, &r.Status, &r.ReportedAt, &r.OwnerTokenHash,
+	)
+	return r, err
+}
+
 func (s *PGStore) InsertResource(ctx context.Context, r Resource) (int64, error) {
 	status := r.Status
 	if status == "" {
@@ -492,15 +506,38 @@ func (s *PGStore) InsertResource(ctx context.Context, r Resource) (int64, error)
 		lat, lon = nil, nil
 	}
 	query := `INSERT INTO resources
-		(kind, name, address, phone, latitude, longitude, geom, location_scope, municipality, department, details, status)
+		(kind, name, address, phone, latitude, longitude, geom, location_scope, municipality, department, details, status, owner_token_hash)
 		VALUES ($1,$2,$3,$4,$5,$6,
 			CASE WHEN $5::double precision IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint($6,$5),4326) END,
-			$7,$8,$9,$10,$11)
+			$7,$8,$9,$10,$11,$12)
 		RETURNING id`
 	var id int64
 	err := s.pool.QueryRow(ctx, query, r.Kind, nilStr(r.Name), nilStr(r.Address), nilStr(r.Phone),
-		lat, lon, r.LocationScope, r.Municipality, r.Department, r.Details, status).Scan(&id)
+		lat, lon, r.LocationScope, r.Municipality, r.Department, r.Details, status, r.OwnerTokenHash).Scan(&id)
 	return id, err
+}
+
+func (s *PGStore) UpdateResourceByOwner(ctx context.Context, id int64, ownerTokenHash string, r Resource) (bool, error) {
+	var lat, lon any = r.Lat, r.Lon
+	if r.LocationScope == "city" {
+		lat, lon = nil, nil
+	}
+	query := `UPDATE resources SET
+		kind = $1, name = $2, address = $3, phone = $4,
+		latitude = $5, longitude = $6,
+		geom = CASE WHEN $5::double precision IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint($6,$5),4326) END,
+		location_scope = $7, municipality = $8, department = $9, details = $10, status = 'pending'
+		WHERE id = $11 AND owner_token_hash = $12
+		RETURNING id`
+	var updatedID int64
+	err := s.pool.QueryRow(ctx, query,
+		r.Kind, nilStr(r.Name), nilStr(r.Address), nilStr(r.Phone),
+		lat, lon, r.LocationScope, r.Municipality, r.Department, r.Details, id, ownerTokenHash,
+	).Scan(&updatedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (s *PGStore) UpdateResource(ctx context.Context, r Resource) error {

@@ -140,18 +140,19 @@ type Site struct {
 }
 
 type Resource struct {
-	ID            int64
-	Kind          string
-	Name          string
-	Address       string
-	Phone         string
-	Lat, Lon      float64
-	LocationScope string // 'point' o 'city'
-	Municipality  string
-	Department    string
-	Details       map[string]any
-	Status        string // 'pending', 'approved', 'rejected'
-	ReportedAt    time.Time
+	ID             int64
+	Kind           string
+	Name           string
+	Address        string
+	Phone          string
+	Lat, Lon       float64
+	LocationScope  string // 'point' o 'city'
+	Municipality   string
+	Department     string
+	Details        map[string]any
+	Status         string // 'pending', 'approved', 'rejected'
+	ReportedAt     time.Time
+	OwnerTokenHash string `json:"-"`
 }
 
 // ResourceCounts agrega los totales globales de recursos aprobados por
@@ -255,8 +256,10 @@ type Store interface {
 	SitesByCell(ctx context.Context) (map[string]int, error)
 	Resources(ctx context.Context, f CellFilter, kind string) ([]Resource, error)
 	ResourceCounts(ctx context.Context) (ResourceCounts, error)
+	ResourceByID(ctx context.Context, id int64) (Resource, error)
 	InsertResource(ctx context.Context, r Resource) (int64, error)
 	UpdateResource(ctx context.Context, r Resource) error
+	UpdateResourceByOwner(ctx context.Context, id int64, ownerTokenHash string, r Resource) (bool, error)
 	UpdateResourceStatus(ctx context.Context, id int64, status string) error
 	UpdateResourceDetails(ctx context.Context, id int64, details map[string]any) error
 	InsertResourceValidation(ctx context.Context, resourceID int64, voteType, ip, userAgent, fingerprint string) (bool, error)

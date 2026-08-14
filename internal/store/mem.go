@@ -367,6 +367,17 @@ func (m *MemStore) ResourceCounts(ctx context.Context) (ResourceCounts, error) {
 	return out, nil
 }
 
+func (m *MemStore) ResourceByID(ctx context.Context, id int64) (Resource, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, r := range m.resources {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return Resource{}, errors.New("resource not found")
+}
+
 func (m *MemStore) InsertResource(ctx context.Context, r Resource) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -391,11 +402,29 @@ func (m *MemStore) UpdateResource(ctx context.Context, r Resource) error {
 	for i := range m.resources {
 		if m.resources[i].ID == r.ID {
 			r.ReportedAt = m.resources[i].ReportedAt
+			r.OwnerTokenHash = m.resources[i].OwnerTokenHash
 			m.resources[i] = r
 			return nil
 		}
 	}
 	return errors.New("resource not found")
+}
+
+func (m *MemStore) UpdateResourceByOwner(ctx context.Context, id int64, ownerTokenHash string, r Resource) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.resources {
+		if m.resources[i].ID != id || m.resources[i].OwnerTokenHash != ownerTokenHash {
+			continue
+		}
+		r.ID = id
+		r.Status = "pending"
+		r.ReportedAt = m.resources[i].ReportedAt
+		r.OwnerTokenHash = m.resources[i].OwnerTokenHash
+		m.resources[i] = r
+		return true, nil
+	}
+	return false, nil
 }
 
 func (m *MemStore) UpdateResourceStatus(ctx context.Context, id int64, status string) error {

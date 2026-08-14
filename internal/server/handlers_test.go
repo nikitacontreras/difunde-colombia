@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -29,6 +30,10 @@ func testProofOfWork(kind, name string) string {
 			return value
 		}
 	}
+}
+
+func testResourceOwnerToken(seed byte) string {
+	return base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{seed}, 32))
 }
 
 func newTestServer() (*Server, *store.MemStore) {
@@ -364,8 +369,9 @@ func TestReportCityWideLogisticsOffer(t *testing.T) {
 		"municipality":"Pereira",
 		"department":"Risaralda",
 		"nonce":%q,
+		"owner_token":%q,
 		"details":{"intent":"offer","description":"Transporte de insumos"}
-	}`, kind, name, testProofOfWork(kind, name))
+	}`, kind, name, testProofOfWork(kind, name), testResourceOwnerToken(1))
 
 	req := httptest.NewRequest(http.MethodPost, "/report", strings.NewReader(payload))
 	req.RemoteAddr = "198.51.100.7:1234"
@@ -390,6 +396,120 @@ func TestReportCityWideLogisticsOffer(t *testing.T) {
 	}
 	if len(resources) != 1 || resources[0].Kind != "logistica" || resources[0].LocationScope != "city" || resources[0].Municipality != "Pereira" || resources[0].Lat != 0 || resources[0].Lon != 0 {
 		t.Fatalf("oferta logística por ciudad inesperada: %+v", resources)
+	}
+}
+
+func TestResourceDeepLinkAndOwnerEdit(t *testing.T) {
+	t.Setenv("ADMIN_KEY", "sekret")
+	s, _ := newTestServer()
+	kind := "centro_acopio"
+	name := "Centro Comunitario Norte"
+	ownerToken := testResourceOwnerToken(7)
+	payload := fmt.Sprintf(`{
+		"kind":%q,
+		"name":%q,
+		"address":"Calle 10 # 20-30",
+		"lat":4.65,
+		"lon":-74.08,
+		"nonce":%q,
+		"owner_token":%q,
+		"details":{"intent":"request","needs":["Agua"]}
+	}`, kind, name, testProofOfWork(kind, name), ownerToken)
+
+	req := httptest.NewRequest(http.MethodPost, "/report", strings.NewReader(payload))
+	req.RemoteAddr = "198.51.100.12:1234"
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("crear recurso = %d, body=%s", w.Code, w.Body.String())
+	}
+	id := w.Header().Get("X-Resource-ID")
+	if id == "" || strings.Contains(w.Body.String(), "OwnerTokenHash") || strings.Contains(w.Body.String(), ownerToken) {
+		t.Fatalf("respuesta de creación insegura: id=%q body=%s", id, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/resources/update-details", strings.NewReader(`{"id":`+id+`,"details":{"description":"cambio anónimo"}}`))
+	req.RemoteAddr = "198.51.100.12:1234"
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("cambio anónimo de contenido = %d, want 400", w.Code)
+	}
+
+	for _, token := range []string{"", testResourceOwnerToken(8)} {
+		req = httptest.NewRequest(http.MethodGet, "/resources/"+id, nil)
+		req.RemoteAddr = "198.51.100.12:1234"
+		if token != "" {
+			req.Header.Set(resourceEditTokenHeader, token)
+		}
+		w = httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("GET pendiente con token %q = %d, want 404", token, w.Code)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/resources/"+id, nil)
+	req.RemoteAddr = "198.51.100.12:1234"
+	req.Header.Set(resourceEditTokenHeader, ownerToken)
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET pendiente propio = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	editPayload := `{
+		"kind":"centro_acopio",
+		"name":"Centro Comunitario Norte Actualizado",
+		"address":"Carrera 11 # 21-31",
+		"phone":"3001234567",
+		"lat":4.651,
+		"lon":-74.081,
+		"details":{"intent":"request","responsible":"Ana Ruiz","needs":["Agua","Cobijas"]}
+	}`
+	req = httptest.NewRequest(http.MethodPut, "/resources/"+id, strings.NewReader(editPayload))
+	req.RemoteAddr = "198.51.100.12:1234"
+	req.Header.Set(resourceEditTokenHeader, testResourceOwnerToken(9))
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("PUT con token incorrecto = %d, want 404", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/resources/"+id, strings.NewReader(editPayload))
+	req.RemoteAddr = "198.51.100.12:1234"
+	req.Header.Set(resourceEditTokenHeader, ownerToken)
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT propio = %d, body=%s", w.Code, w.Body.String())
+	}
+	var edited store.Resource
+	if err := json.Unmarshal(w.Body.Bytes(), &edited); err != nil {
+		t.Fatal(err)
+	}
+	if edited.Status != "pending" || edited.Name != "Centro Comunitario Norte Actualizado" || edited.Details["responsible"] != "Ana Ruiz" {
+		t.Fatalf("recurso editado inesperado: %+v", edited)
+	}
+	if strings.Contains(w.Body.String(), "OwnerTokenHash") || strings.Contains(w.Body.String(), ownerToken) {
+		t.Fatalf("respuesta de edición expone credencial: %s", w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/resources/moderate", strings.NewReader(`{"id":`+id+`,"status":"approved"}`))
+	req.RemoteAddr = "198.51.100.12:1234"
+	req.Header.Set("X-Admin-Key", "sekret")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("aprobar recurso = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/resources/"+id, nil)
+	req.RemoteAddr = "198.51.100.12:1234"
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Ana Ruiz") {
+		t.Fatalf("GET público aprobado = %d, body=%s", w.Code, w.Body.String())
 	}
 }
 

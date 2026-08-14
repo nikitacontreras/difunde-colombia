@@ -413,6 +413,7 @@ function apiFetch(input, init) {
   var selectedResource = null;
   var isPickingLocation = false;
   var pickedLatLng = null;
+  var editingResource = null;
 
   // Últimos bounds cargados por loader (para no re-pedir si el viewport
   // sigue dentro de lo ya cargado) y debounce de refresco al mover el mapa.
@@ -603,11 +604,74 @@ function apiFetch(input, init) {
     return String((r.Details && r.Details.intent) || "request").toLowerCase();
   }
 
+  function resourceKindLabel(kind) {
+    var labels = {
+      logistica: "Logística / transporte",
+      centro_acopio: "Centro de acopio",
+      olla_comunitaria: "Olla comunitaria",
+      hospital: "Punto de salud / hospital",
+      refugio: "Refugio / albergue",
+      agua: "Distribución de agua",
+      energia: "Punto de energía",
+      internet: "Punto de acceso a internet",
+      via_bloqueada: "Vía bloqueada",
+      afectacion_estructural: "Afectación estructural"
+    };
+    return labels[kind] || String(kind || "Reporte").replace(/_/g, " ");
+  }
+
+  function resourcePublicURL(r) {
+    var url = new URL("/", window.location.origin);
+    url.searchParams.set("p", String(r.ID));
+    return url.toString();
+  }
+
+  function resourceEditStorageKey(id) {
+    return "resource_edit_token_" + id;
+  }
+
+  function getResourceEditToken(id) {
+    try {
+      return localStorage.getItem(resourceEditStorageKey(id)) || "";
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function storeResourceEditToken(id, token) {
+    try {
+      localStorage.setItem(resourceEditStorageKey(id), token);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function createResourceEditToken() {
+    var bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    var binary = "";
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
   function resourceLocationLabel(r) {
     if (getResourceScope(r) === "city") {
       return [r.Municipality, r.Department].filter(Boolean).join(", ") || "Cobertura por ciudad";
     }
     return r.Address || "Ubicación puntual";
+  }
+
+  function updateResourceURL(resourceID, mode) {
+    var url = new URL(window.location.href);
+    if (resourceID) {
+      url.searchParams.set("p", String(resourceID));
+    } else {
+      url.searchParams.delete("p");
+    }
+    var next = url.pathname + url.search + url.hash;
+    var state = resourceID ? { resourceID: Number(resourceID) } : {};
+    window.history[mode === "replace" ? "replaceState" : "pushState"](state, "", next);
   }
 
   function escapeHTML(value) {
@@ -804,9 +868,10 @@ function apiFetch(input, init) {
   // Select a Report and view details
   function selectResource(r) {
     selectedResource = r;
-    
-    document.getElementById("detail-card-title").textContent = r.Name;
+
+    document.getElementById("detail-card-title").textContent = r.Name || "Reporte sin título";
     var descriptionParts = [resourceLocationLabel(r)];
+    if (r.Details && r.Details.responsible) descriptionParts.push("Responsable: " + r.Details.responsible);
     if (r.Phone) descriptionParts.push("Tel: " + r.Phone);
     if (r.Details && r.Details.description) descriptionParts.push(r.Details.description);
     document.getElementById("detail-card-desc").textContent = descriptionParts.join(" · ");
@@ -829,9 +894,26 @@ function apiFetch(input, init) {
     var dismisses = (r.Details && r.Details.dismisses) || 0;
     document.getElementById("detail-card-votes").textContent = confirms + " confirman · " + dismisses + " desmienten";
 
+    var reviewNote = document.getElementById("detail-review-note");
+    if (r.Status === "approved") {
+      reviewNote.classList.remove("pending");
+      reviewNote.textContent = "Información revisada y curada por Colombia Difunde.";
+    } else {
+      reviewNote.classList.add("pending");
+      reviewNote.textContent = r.Status === "rejected"
+        ? "Este reporte requiere correcciones antes de poder publicarse."
+        : "En revisión: solo tú y moderación pueden verlo. El enlace será público cuando sea aprobado.";
+    }
+
     // Google Maps link
     var mapsQuery = getResourceScope(r) === "city" ? resourceLocationLabel(r) : r.Lat + "," + r.Lon;
     document.getElementById("btn-gmaps").href = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(mapsQuery);
+
+    var editButton = document.getElementById("btn-edit-point");
+    editButton.hidden = !getResourceEditToken(r.ID);
+    var shareButton = document.getElementById("btn-share");
+    shareButton.disabled = r.Status !== "approved";
+    shareButton.textContent = r.Status === "approved" ? "Compartir" : "Compartir al aprobarse";
 
     // Render Needs
     renderNeedsTags(r);
@@ -874,6 +956,9 @@ function apiFetch(input, init) {
     // Open detail panel
     document.getElementById("detail-panel").classList.add("open");
 
+    var currentID = Number(new URL(window.location.href).searchParams.get("p"));
+    if (currentID !== Number(r.ID)) updateResourceURL(r.ID, "push");
+
     // Center map on selected resource
     if (getResourceScope(r) !== "city") {
       map.setView([r.Lat, r.Lon], 16);
@@ -891,16 +976,7 @@ function apiFetch(input, init) {
     needs.forEach(function (n, index) {
       var span = document.createElement("span");
       span.className = "need-tag";
-      span.appendChild(document.createTextNode(String(n) + " "));
-      var remove = document.createElement("span");
-      remove.className = "need-remove";
-      remove.setAttribute("data-index", String(index));
-      remove.textContent = "×";
-      remove.addEventListener("click", function (e) {
-        e.stopPropagation();
-        removeNeed(index);
-      });
-      span.appendChild(remove);
+      span.textContent = String(n);
       container.appendChild(span);
     });
   }
@@ -954,24 +1030,6 @@ function apiFetch(input, init) {
     });
   });
 
-  // Adding needs
-  document.getElementById("btn-add-need").addEventListener("click", function () {
-    if (!selectedResource) return;
-    var val = document.getElementById("new-need-input").value.trim();
-    if (!val) return;
-    var needs = (selectedResource.Details && selectedResource.Details.needs) || [];
-    needs.push(val);
-    pushDetailsUpdate({ needs: needs }, "Necesidad añadida.");
-    document.getElementById("new-need-input").value = "";
-  });
-
-  function removeNeed(index) {
-    if (!selectedResource) return;
-    var needs = (selectedResource.Details && selectedResource.Details.needs) || [];
-    needs.splice(index, 1);
-    pushDetailsUpdate({ needs: needs }, "Necesidad eliminada.");
-  }
-
   // Voting
   document.getElementById("btn-vote-confirm").addEventListener("click", function () {
     if (!selectedResource || localStorage.getItem("voted_" + selectedResource.ID)) return;
@@ -1005,22 +1063,71 @@ function apiFetch(input, init) {
 
   // Back button in details
   document.getElementById("btn-detail-back").addEventListener("click", function () {
+    var selectedID = selectedResource && selectedResource.ID;
     document.getElementById("detail-panel").classList.remove("open");
     selectedResource = null;
+    if (selectedID && window.history.state && Number(window.history.state.resourceID) === Number(selectedID)) {
+      window.history.back();
+    } else {
+      updateResourceURL(null, "replace");
+    }
   });
+
+  function resourceShareText(r) {
+    var details = r.Details || {};
+    var lines = [
+      "🇨🇴 *Colombia Difunde*",
+      "",
+      "*" + (r.Name || "Reporte de ayuda") + "*",
+      "Tipo: " + resourceKindLabel(r.Kind)
+    ];
+    if (getResourceScope(r) === "city") {
+      lines.push("Cobertura: " + resourceLocationLabel(r));
+      if (r.Address) lines.push("Dirección o zona: " + r.Address);
+    } else {
+      lines.push("Dirección: " + resourceLocationLabel(r));
+    }
+    if (details.responsible) lines.push("Responsable: " + details.responsible);
+    if (r.Phone) lines.push("Contacto: " + r.Phone);
+    if (Array.isArray(details.needs) && details.needs.length) {
+      lines.push((getResourceIntent(r) === "offer" ? "Disponible: " : "Necesidades: ") + details.needs.join(", "));
+    }
+    if (details.availability) lines.push("Disponibilidad: " + details.availability);
+    if (details.description) lines.push("Detalles: " + details.description);
+    lines.push("", "Información verificada y curada.", "Ver reporte: " + resourcePublicURL(r));
+    return lines.join("\n");
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    var field = document.createElement("textarea");
+    field.value = text;
+    field.style.position = "fixed";
+    field.style.opacity = "0";
+    document.body.appendChild(field);
+    field.select();
+    document.execCommand("copy");
+    field.remove();
+    return Promise.resolve();
+  }
 
   // Share button
   document.getElementById("btn-share").addEventListener("click", function () {
-    if (!selectedResource) return;
+    if (!selectedResource || selectedResource.Status !== "approved") return;
+    var text = resourceShareText(selectedResource);
     if (navigator.share) {
       navigator.share({
         title: selectedResource.Name,
-        text: resourceLocationLabel(selectedResource) + (getResourceIntent(selectedResource) === "offer" ? " - Ofrecimiento de ayuda disponible." : " - Solicitud de ayuda vigente."),
-        url: window.location.href
+        text: text
+      }).catch(function (error) {
+        if (error && error.name !== "AbortError") toast("No se pudo compartir el reporte.");
       });
     } else {
-      navigator.clipboard.writeText(window.location.href);
-      toast("Enlace copiado al portapapeles.");
+      copyText(text).then(function () {
+        toast("Información y enlace copiados.");
+      }).catch(function () {
+        toast("No se pudo copiar la información.");
+      });
     }
   });
 
@@ -1067,10 +1174,55 @@ function apiFetch(input, init) {
     radio.addEventListener("change", updateReportScope);
   });
 
+  function setReportScope(scope) {
+    var radio = document.querySelector('input[name="modal-scope"][value="' + scope + '"]');
+    if (radio) radio.checked = true;
+    updateReportScope();
+  }
+
+  function setReportFormMode(resource) {
+    var form = document.getElementById("add-point-form");
+    form.reset();
+    editingResource = resource || null;
+    pickedLatLng = null;
+    if (!resource) {
+      document.getElementById("report-form-title").textContent = "Publicar ayuda u ofrecimiento";
+      document.getElementById("btn-submit-report").textContent = "ENVIAR REPORTE";
+      document.getElementById("report-owner-help").textContent = "Este navegador guardará localmente un permiso privado para editar el reporte después de enviarlo.";
+      setReportScope("city");
+      return;
+    }
+
+    document.getElementById("report-form-title").textContent = "Editar mi reporte";
+    document.getElementById("btn-submit-report").textContent = "GUARDAR Y ENVIAR A REVISIÓN";
+    document.getElementById("report-owner-help").textContent = "Los cambios pasarán nuevamente por revisión antes de publicarse.";
+    document.getElementById("modal-intent").value = getResourceIntent(resource);
+    document.getElementById("modal-kind").value = resource.Kind;
+    document.getElementById("modal-name").value = resource.Name || "";
+    document.getElementById("modal-address").value = resource.Address || "";
+    document.getElementById("modal-phone").value = resource.Phone || "";
+    document.getElementById("modal-responsible").value = resource.Details && resource.Details.responsible || "";
+    document.getElementById("modal-municipality").value = resource.Municipality || "";
+    document.getElementById("modal-department").value = resource.Department || "";
+    document.getElementById("modal-urgency").value = getResourceUrgency(resource);
+    document.getElementById("modal-description").value = resource.Details && resource.Details.description || "";
+    document.getElementById("modal-needs").value = resource.Details && Array.isArray(resource.Details.needs) ? resource.Details.needs.join(", ") : "";
+    if (getResourceScope(resource) === "point") {
+      pickedLatLng = { lat: Number(resource.Lat), lng: Number(resource.Lon) };
+    }
+    setReportScope(getResourceScope(resource));
+  }
+
   // El formulario decide primero entre cobertura por ciudad o punto exacto.
   document.getElementById("btn-trigger-add").addEventListener("click", function () {
+    setReportFormMode(null);
     document.getElementById("add-point-modal").classList.add("open");
-    updateReportScope();
+  });
+
+  document.getElementById("btn-edit-point").addEventListener("click", function () {
+    if (!selectedResource || !getResourceEditToken(selectedResource.ID)) return;
+    setReportFormMode(selectedResource);
+    document.getElementById("add-point-modal").classList.add("open");
   });
 
   document.getElementById("btn-pick-report-location").addEventListener("click", function () {
@@ -1243,6 +1395,7 @@ function apiFetch(input, init) {
   document.getElementById("btn-modal-close").addEventListener("click", function () {
     document.getElementById("add-point-modal").classList.remove("open");
     pickedLatLng = null;
+    editingResource = null;
     isPickingLocation = false;
     document.getElementById("map-pick-indicator").style.display = "none";
     updateReportScope();
@@ -1269,9 +1422,16 @@ function apiFetch(input, init) {
   document.getElementById("add-point-form").addEventListener("submit", async function (e) {
     e.preventDefault();
 
+    var submitButton = document.getElementById("btn-submit-report");
+    var resourceBeingEdited = editingResource;
+    var editToken = resourceBeingEdited ? getResourceEditToken(resourceBeingEdited.ID) : "";
     var scope = reportScope();
     if (scope === "point" && !pickedLatLng) {
       toast("Selecciona primero el punto exacto en el mapa.");
+      return;
+    }
+    if (resourceBeingEdited && !editToken) {
+      toast("Este navegador ya no tiene permiso para editar el reporte.");
       return;
     }
     var kind = document.getElementById("modal-kind").value;
@@ -1279,6 +1439,7 @@ function apiFetch(input, init) {
     var intent = document.getElementById("modal-intent").value;
     var address = document.getElementById("modal-address").value;
     var phone = document.getElementById("modal-phone").value;
+    var responsible = document.getElementById("modal-responsible").value;
     var municipality = document.getElementById("modal-municipality").value;
     var department = document.getElementById("modal-department").value;
     var urgency = document.getElementById("modal-urgency").value;
@@ -1286,9 +1447,6 @@ function apiFetch(input, init) {
     var rawNeeds = document.getElementById("modal-needs").value;
     
     var needsArr = rawNeeds.split(",").map(s => s.trim()).filter(Boolean);
-
-    toast("Generando prueba de trabajo anti-spam...");
-    var nonce = await solvePoW(kind, name);
 
     var payload = {
       kind: kind,
@@ -1298,11 +1456,11 @@ function apiFetch(input, init) {
       location_scope: scope,
       municipality: scope === "city" ? municipality : "",
       department: scope === "city" ? department : "",
-      nonce: nonce,
       details: {
         intent: intent,
         urgency: urgency,
         description: description,
+        responsible: responsible,
         needs: needsArr,
         helping: 0,
         needed: 0,
@@ -1315,24 +1473,60 @@ function apiFetch(input, init) {
       payload.lon = pickedLatLng.lng;
     }
 
-    apiFetch("/report", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
-    }).then(function (res) {
-      if (res.ok) {
-        toast("Reporte enviado exitosamente");
-        document.getElementById("add-point-modal").classList.remove("open");
-        document.getElementById("add-point-form").reset();
-        pickedLatLng = null;
-        updateReportScope();
-        refresh(true);
+    submitButton.disabled = true;
+    try {
+      var requestURL;
+      var requestMethod;
+      var requestHeaders = { "content-type": "application/json" };
+      var ownerToken = editToken;
+      if (resourceBeingEdited) {
+        requestURL = "/resources/" + resourceBeingEdited.ID;
+        requestMethod = "PUT";
+        requestHeaders["X-Resource-Edit-Token"] = editToken;
+        submitButton.textContent = "GUARDANDO...";
       } else {
-        toast("Error al registrar el reporte.");
+        toast("Generando prueba anti-spam...");
+        submitButton.textContent = "PREPARANDO REPORTE...";
+        ownerToken = createResourceEditToken();
+        payload.owner_token = ownerToken;
+        payload.nonce = await solvePoW(kind, name);
+        requestURL = "/report";
+        requestMethod = "POST";
       }
-    }).catch(function () {
-      toast("Error de red.");
-    });
+
+      var response = await apiFetch(requestURL, {
+        method: requestMethod,
+        headers: requestHeaders,
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) {
+        if (response.status === 404 && resourceBeingEdited) throw new Error("permission");
+        throw new Error("request");
+      }
+      var savedResource = await response.json();
+      if (!resourceBeingEdited && !storeResourceEditToken(savedResource.ID, ownerToken)) {
+        toast("Reporte enviado, pero el navegador no pudo guardar el permiso de edición.");
+      } else {
+        toast(resourceBeingEdited ? "Cambios enviados nuevamente a revisión." : "Reporte enviado a revisión.");
+      }
+
+      allResources = allResources.filter(function (item) { return Number(item.ID) !== Number(savedResource.ID); });
+      if (savedResource.Status === "approved") allResources.push(savedResource);
+      renderReportList();
+      drawResourceMarkers();
+      document.getElementById("add-point-modal").classList.remove("open");
+      document.getElementById("add-point-form").reset();
+      pickedLatLng = null;
+      editingResource = null;
+      selectResource(savedResource);
+    } catch (error) {
+      toast(error && error.message === "permission"
+        ? "El permiso de edición no es válido en este navegador."
+        : "No se pudo guardar el reporte. Revisa tu conexión e intenta nuevamente.");
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = resourceBeingEdited ? "GUARDAR Y ENVIAR A REVISIÓN" : "ENVIAR REPORTE";
+    }
   });
 
   updateReportScope();
@@ -1409,7 +1603,7 @@ function apiFetch(input, init) {
   if ("geolocation" in navigator) {
     navigator.geolocation.getCurrentPosition(function (pos) {
       userLatLng = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-      map.setView([userLatLng.lat, userLatLng.lng], 14);
+      if (!selectedResource) map.setView([userLatLng.lat, userLatLng.lng], 14);
       L.marker([userLatLng.lat, userLatLng.lng]).addTo(map).bindPopup("Tu ubicación actual").openPopup();
       refresh(true);
     }, function () {
@@ -1499,6 +1693,48 @@ function apiFetch(input, init) {
       renderReportList();
     }).catch(function () {});
   }
+
+  function resourceIDFromURL() {
+    var value = new URL(window.location.href).searchParams.get("p");
+    if (!/^\d+$/.test(value || "")) return 0;
+    var id = Number(value);
+    return Number.isSafeInteger(id) && id > 0 ? id : 0;
+  }
+
+  function loadLinkedResource(showError) {
+    var id = resourceIDFromURL();
+    if (!id) {
+      document.getElementById("detail-panel").classList.remove("open");
+      selectedResource = null;
+      return Promise.resolve(null);
+    }
+    var headers = {};
+    var token = getResourceEditToken(id);
+    if (token) headers["X-Resource-Edit-Token"] = token;
+    return apiFetch("/resources/" + id, { cache: "no-store", headers: headers })
+      .then(function (response) {
+        if (!response.ok) throw new Error("not-found");
+        return response.json();
+      })
+      .then(function (resource) {
+        allResources = allResources.filter(function (item) { return Number(item.ID) !== Number(resource.ID); });
+        if (resource.Status === "approved") allResources.push(resource);
+        renderReportList();
+        drawResourceMarkers();
+        selectResource(resource);
+        return resource;
+      })
+      .catch(function () {
+        document.getElementById("detail-panel").classList.remove("open");
+        selectedResource = null;
+        if (showError) toast("Este reporte no existe, no está publicado o ya no está disponible.");
+        return null;
+      });
+  }
+
+  window.addEventListener("popstate", function () {
+    loadLinkedResource(false);
+  });
 
   // Connectivity Test Card Logic inside Map
   var testObsId = null;
@@ -1784,6 +2020,7 @@ function apiFetch(input, init) {
   }
 
   refresh();
+  loadLinkedResource(true);
   loadCoverageCatalog();
   loadResourceCounts();
   map.on("moveend", scheduleRefresh);
