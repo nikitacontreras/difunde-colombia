@@ -3,11 +3,13 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,16 @@ import (
 	"colombia-difunde/internal/observe"
 	"colombia-difunde/internal/store"
 )
+
+func testProofOfWork(kind, name string) string {
+	for nonce := 0; ; nonce++ {
+		value := strconv.Itoa(nonce)
+		sum := sha256.Sum256([]byte(kind + name + value))
+		if sum[0] == 0 {
+			return value
+		}
+	}
+}
 
 func newTestServer() (*Server, *store.MemStore) {
 	cfg, err := config.Load()
@@ -157,7 +169,7 @@ func TestFollowupUpdate(t *testing.T) {
 	}
 }
 
-func TestAdminSessionAndHistory(t *testing.T) {
+func TestAdminHeaderAndHistory(t *testing.T) {
 	t.Setenv("ADMIN_KEY", "sekret")
 	s, m := newTestServer()
 	now := time.Now().UTC()
@@ -204,40 +216,50 @@ func TestAdminSessionAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/api/overview", nil)
-	req.RemoteAddr = "198.51.100.7:1234"
-	w := httptest.NewRecorder()
-	s.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("overview sin auth = %d, want 401", w.Code)
+	for _, path := range []string{"/admin", "/admin.css", "/admin.js", "/admin/api/overview", "/admin/api/resources"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "198.51.100.7:1234"
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("GET %s sin header = %d, want 404", path, w.Code)
+		}
+
+		req = httptest.NewRequest(http.MethodGet, path, nil)
+		req.RemoteAddr = "198.51.100.7:1234"
+		req.Header.Set("X-Admin-Key", "incorrecta")
+		w = httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, req)
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("GET %s con header inválido = %d, want 404", path, w.Code)
+		}
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/admin/session", nil)
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.Header.Set("X-Admin-Key", "sekret")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "Centro de operaciones") {
+		t.Fatalf("admin con header = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin.css", nil)
 	req.RemoteAddr = "198.51.100.7:1234"
 	req.Header.Set("X-Admin-Key", "sekret")
 	w = httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, req)
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("admin session = %d, body=%s", w.Code, w.Body.String())
-	}
-	var adminCookie *http.Cookie
-	for _, c := range w.Result().Cookies() {
-		if c.Name == "cdfd_admin" {
-			adminCookie = c
-			break
-		}
-	}
-	if adminCookie == nil {
-		t.Fatal("no se emitió cookie de sesión admin")
+	if w.Code != http.StatusOK || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("admin.css con header = %d, cache=%q", w.Code, w.Header().Get("Cache-Control"))
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/admin/api/overview", nil)
 	req.RemoteAddr = "198.51.100.7:1234"
-	req.AddCookie(adminCookie)
+	req.Header.Set("X-Admin-Key", "sekret")
 	w = httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("overview con cookie = %d, body=%s", w.Code, w.Body.String())
+		t.Fatalf("overview con header = %d, body=%s", w.Code, w.Body.String())
 	}
 	var overview struct {
 		ObservationsTotal int `json:"observations_total"`
@@ -253,7 +275,7 @@ func TestAdminSessionAndHistory(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodGet, "/admin/api/observations?limit=1&q=movistar", nil)
 	req.RemoteAddr = "198.51.100.7:1234"
-	req.AddCookie(adminCookie)
+	req.Header.Set("X-Admin-Key", "sekret")
 	w = httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -275,28 +297,99 @@ func TestAdminSessionAndHistory(t *testing.T) {
 
 	req = httptest.NewRequest(http.MethodPost, "/resources/moderate", strings.NewReader(fmt.Sprintf(`{"id":%d,"status":"approved"}`, resourceID)))
 	req.RemoteAddr = "198.51.100.7:1234"
-	req.AddCookie(adminCookie)
+	req.Header.Set("X-Admin-Key", "sekret")
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusNoContent {
-		t.Fatalf("moderar recurso con cookie = %d, body=%s", w.Code, w.Body.String())
+		t.Fatalf("moderar recurso con header = %d, body=%s", w.Code, w.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/resources", nil)
+	cityPayload := `{
+		"kind":"logistica",
+		"name":"Camiones voluntarios Pereira",
+		"phone":"3001234567",
+		"location_scope":"city",
+		"municipality":"Pereira",
+		"department":"Risaralda",
+		"status":"approved",
+		"details":{"intent":"offer","availability":"Hoy"}
+	}`
+	req = httptest.NewRequest(http.MethodPost, "/admin/api/resources", strings.NewReader(cityPayload))
 	req.RemoteAddr = "198.51.100.7:1234"
-	req.AddCookie(adminCookie)
+	req.Header.Set("X-Admin-Key", "sekret")
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("crear oferta por ciudad = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin/api/resources", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.Header.Set("X-Admin-Key", "sekret")
 	w = httptest.NewRecorder()
 	s.Handler().ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
-		t.Fatalf("GET /resources admin = %d", w.Code)
+		t.Fatalf("GET /admin/api/resources = %d", w.Code)
 	}
 	var resources []map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &resources); err != nil {
 		t.Fatal(err)
 	}
-	if len(resources) != 1 || resources[0]["Status"] != "approved" {
-		t.Fatalf("recurso no moderado correctamente: %+v", resources)
+	if len(resources) != 2 {
+		t.Fatalf("recursos admin = %d, want 2: %+v", len(resources), resources)
+	}
+	var cityResource map[string]any
+	for _, resource := range resources {
+		if resource["LocationScope"] == "city" {
+			cityResource = resource
+		}
+	}
+	if cityResource == nil || cityResource["Municipality"] != "Pereira" || cityResource["Kind"] != "logistica" || cityResource["Status"] != "approved" {
+		t.Fatalf("oferta por ciudad inesperada: %+v", cityResource)
+	}
+}
+
+func TestReportCityWideLogisticsOffer(t *testing.T) {
+	t.Setenv("ADMIN_KEY", "sekret")
+	s, _ := newTestServer()
+	kind := "logistica"
+	name := "Voluntarios con camioneta"
+	payload := fmt.Sprintf(`{
+		"kind":%q,
+		"name":%q,
+		"phone":"3001234567",
+		"location_scope":"city",
+		"municipality":"Pereira",
+		"department":"Risaralda",
+		"nonce":%q,
+		"details":{"intent":"offer","description":"Transporte de insumos"}
+	}`, kind, name, testProofOfWork(kind, name))
+
+	req := httptest.NewRequest(http.MethodPost, "/report", strings.NewReader(payload))
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("POST /report city = %d, body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/admin/api/resources", nil)
+	req.RemoteAddr = "198.51.100.7:1234"
+	req.Header.Set("X-Admin-Key", "sekret")
+	w = httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("GET admin resources = %d", w.Code)
+	}
+	var resources []store.Resource
+	if err := json.Unmarshal(w.Body.Bytes(), &resources); err != nil {
+		t.Fatal(err)
+	}
+	if len(resources) != 1 || resources[0].Kind != "logistica" || resources[0].LocationScope != "city" || resources[0].Municipality != "Pereira" || resources[0].Lat != 0 || resources[0].Lon != 0 {
+		t.Fatalf("oferta logística por ciudad inesperada: %+v", resources)
 	}
 }
 

@@ -3,21 +3,17 @@ package server
 import (
 	"compress/gzip"
 	"crypto/rand"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
 )
 
 const clientSessionCookieName = "cdfd_sid"
-const adminSessionCookieName = "cdfd_admin"
 
 // requestID genera o propaga un id de request para correlacionar logs.
 // Nunca contiene IP ni datos personales.
@@ -162,65 +158,6 @@ func newClientSessionID() string {
 		return requestID() + requestID()
 	}
 	return hex.EncodeToString(b)
-}
-
-func adminSessionToken() string {
-	key := strings.TrimSpace(os.Getenv("ADMIN_KEY"))
-	if key == "" {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(key + "|cdfd-admin-session"))
-	return hex.EncodeToString(sum[:])
-}
-
-func adminSessionValid(r *http.Request) bool {
-	expected := adminSessionToken()
-	if expected == "" {
-		return false
-	}
-	cookie, err := r.Cookie(adminSessionCookieName)
-	if err != nil {
-		return false
-	}
-	value := strings.TrimSpace(cookie.Value)
-	if len(value) != len(expected) {
-		return false
-	}
-	return subtle.ConstantTimeCompare([]byte(value), []byte(expected)) == 1
-}
-
-func setAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
-	token := adminSessionToken()
-	if token == "" {
-		return
-	}
-	cookie := &http.Cookie{
-		Name:     adminSessionCookieName,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   int((12 * time.Hour).Seconds()),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	}
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		cookie.Secure = true
-	}
-	http.SetCookie(w, cookie)
-}
-
-func clearAdminSessionCookie(w http.ResponseWriter, r *http.Request) {
-	cookie := &http.Cookie{
-		Name:     adminSessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	}
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
-		cookie.Secure = true
-	}
-	http.SetCookie(w, cookie)
 }
 
 func tooManyRequests(w http.ResponseWriter, retryAfter time.Duration) {

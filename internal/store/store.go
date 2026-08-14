@@ -90,11 +90,19 @@ type AdminOverview struct {
 	ObservationsTotal    int        `json:"observations_total"`
 	Observations24h      int        `json:"observations_24h"`
 	Observations7d       int        `json:"observations_7d"`
+	ObservationsRisk24h  int        `json:"observations_risk_24h"`
+	ObservationsSaveData int        `json:"observations_save_data_24h"`
 	LatestObservationAt  *time.Time `json:"latest_observation_at,omitempty"`
 	ResourcesTotal       int        `json:"resources_total"`
 	ResourcesPending     int        `json:"resources_pending"`
 	ResourcesApproved    int        `json:"resources_approved"`
 	ResourcesRejected    int        `json:"resources_rejected"`
+	ResourcesCityScope   int        `json:"resources_city_scope"`
+	ResourcesPointScope  int        `json:"resources_point_scope"`
+	ResourcesLogistics   int        `json:"resources_logistics"`
+	ResourcesOffers      int        `json:"resources_offers"`
+	ResourcesRequests    int        `json:"resources_requests"`
+	LatestResourceAt     *time.Time `json:"latest_resource_at,omitempty"`
 	ActiveOperatorsCount int        `json:"active_operators_count"`
 }
 
@@ -132,15 +140,18 @@ type Site struct {
 }
 
 type Resource struct {
-	ID         int64
-	Kind       string
-	Name       string
-	Address    string
-	Phone      string
-	Lat, Lon   float64
-	Details    map[string]any
-	Status     string // 'pending', 'approved', 'rejected'
-	ReportedAt time.Time
+	ID            int64
+	Kind          string
+	Name          string
+	Address       string
+	Phone         string
+	Lat, Lon      float64
+	LocationScope string // 'point' o 'city'
+	Municipality  string
+	Department    string
+	Details       map[string]any
+	Status        string // 'pending', 'approved', 'rejected'
+	ReportedAt    time.Time
 }
 
 // CoverageRow es el snapshot oficial de cobertura reportada por
@@ -236,6 +247,7 @@ type Store interface {
 	SitesByCell(ctx context.Context) (map[string]int, error)
 	Resources(ctx context.Context, f CellFilter, kind string) ([]Resource, error)
 	InsertResource(ctx context.Context, r Resource) (int64, error)
+	UpdateResource(ctx context.Context, r Resource) error
 	UpdateResourceStatus(ctx context.Context, id int64, status string) error
 	UpdateResourceDetails(ctx context.Context, id int64, details map[string]any) error
 	InsertResourceValidation(ctx context.Context, resourceID int64, voteType, ip, userAgent, fingerprint string) (bool, error)

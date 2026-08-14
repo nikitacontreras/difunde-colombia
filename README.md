@@ -112,6 +112,12 @@ variables de entorno; sin ellas se usan los defaults.
 | GET | `/coverage/sites?municipality=cali` | Sitios oficiales por operador y municipio (agregados). |
 | GET | `/coverage/providers` | Catálogo normalizado de capas públicas por operador y tecnología. |
 | GET | `/coverage/overlays?provider=movistar&technology=LTE&bbox=LON1,LAT1,LON2,LAT2` | Overlays KML visibles de Movistar, filtrados por viewport. |
+| GET | `/resources?kind=logistica` | Recursos aprobados; admite alcance puntual o por ciudad. |
+| POST | `/report` | Publica un recurso pendiente (`location_scope=point|city`). |
+| GET | `/admin` | Centro de operaciones oculto; requiere `X-Admin-Key`. |
+| GET | `/admin/api/observations` | Histórico paginado y filtrable para administración. |
+| GET/POST | `/admin/api/resources` | Lista completa y alta rápida de recursos. |
+| PUT | `/admin/api/resources/{id}` | Edición integral de un recurso. |
 | GET | `/p` | Probe pasivo (mide latencia del cliente). |
 | GET | `/probe/1k`, `/probe/4k` | Cuerpos para estimar throughput. |
 | GET | `/`, `/map` | Frontend. |
@@ -119,6 +125,18 @@ variables de entorno; sin ellas se usan los defaults.
 El agregado por celda incluye: `n` (muestras), `r` (RTT mediana), `j` (jitter
 mediana), `q` (ratio de éxito), `o` (operador dominante), `s` (estado), `c`
 (confianza), `t` (última observación), `p` (sitios oficiales en la celda).
+
+### Acceso administrativo
+
+Define `ADMIN_KEY` y configura el proxy o una extensión del navegador para
+añadir `X-Admin-Key` a **todas** las peticiones del panel, incluidos
+`/admin.css`, `/admin.js` y `/admin/api/*`. No hay formulario de login ni
+cookie admin: si el header falta o es incorrecto, esas rutas responden `404`.
+
+Los ofrecimientos sin punto fijo usan `location_scope: "city"` junto con
+`municipality` y, opcionalmente, `department`; su geometría queda nula. Los
+recursos con `location_scope: "point"` conservan `lat` y `lon` y aparecen como
+marcadores en el mapa.
 
 ## Clasificación de estado
 
@@ -138,6 +156,8 @@ usan para corregir asignaciones dudosas de operador (`/o/update`).
 - Rate limiting por IP por endpoint (`RATE_*_PER_MIN`), amplio por CGNAT.
 - `MAX_BODY_BYTES` y `MAX_SYNC_ITEMS` limitan las peticiones.
 - Headers de seguridad (`nosniff`, `no-referrer`), ETag en agregados.
+- Panel administrativo oculto con comparación constante de `X-Admin-Key` y
+  respuestas `404` para accesos inválidos.
 - Los agregados se cachean en memoria (TTL configurable) para no golpear la DB.
 - La IP nunca se persiste; solo se conservan metadatos de red (ASN/operador).
 

@@ -262,9 +262,19 @@ func (s *PGStore) AdminOverview(ctx context.Context) (AdminOverview, error) {
 			COUNT(*)::int,
 			COUNT(*) FILTER (WHERE observed_at >= now() - interval '24 hours')::int,
 			COUNT(*) FILTER (WHERE observed_at >= now() - interval '7 days')::int,
+			COUNT(*) FILTER (WHERE observed_at >= now() - interval '24 hours'
+				AND (http_rtt_median >= 800 OR success_ratio < 0.6 OR call_signal = 'no'))::int,
+			COUNT(*) FILTER (WHERE observed_at >= now() - interval '24 hours' AND save_data)::int,
 			MAX(observed_at)
 		FROM observations`,
-	).Scan(&out.ObservationsTotal, &out.Observations24h, &out.Observations7d, &latest); err != nil {
+	).Scan(
+		&out.ObservationsTotal,
+		&out.Observations24h,
+		&out.Observations7d,
+		&out.ObservationsRisk24h,
+		&out.ObservationsSaveData,
+		&latest,
+	); err != nil {
 		return out, err
 	}
 	if latest.Valid {
@@ -272,15 +282,37 @@ func (s *PGStore) AdminOverview(ctx context.Context) (AdminOverview, error) {
 		out.LatestObservationAt = &t
 	}
 
+	var latestResource sql.NullTime
 	if err := s.pool.QueryRow(ctx, `
 		SELECT
 			COUNT(*)::int,
 			COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = 'pending')::int,
 			COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = 'approved')::int,
-			COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = 'rejected')::int
+			COUNT(*) FILTER (WHERE LOWER(COALESCE(status, '')) = 'rejected')::int,
+			COUNT(*) FILTER (WHERE location_scope = 'city')::int,
+			COUNT(*) FILTER (WHERE location_scope <> 'city')::int,
+			COUNT(*) FILTER (WHERE kind = 'logistica')::int,
+			COUNT(*) FILTER (WHERE details->>'intent' = 'offer')::int,
+			COUNT(*) FILTER (WHERE details->>'intent' = 'request')::int,
+			MAX(reported_at)
 		FROM resources`,
-	).Scan(&out.ResourcesTotal, &out.ResourcesPending, &out.ResourcesApproved, &out.ResourcesRejected); err != nil {
+	).Scan(
+		&out.ResourcesTotal,
+		&out.ResourcesPending,
+		&out.ResourcesApproved,
+		&out.ResourcesRejected,
+		&out.ResourcesCityScope,
+		&out.ResourcesPointScope,
+		&out.ResourcesLogistics,
+		&out.ResourcesOffers,
+		&out.ResourcesRequests,
+		&latestResource,
+	); err != nil {
 		return out, err
+	}
+	if latestResource.Valid {
+		t := latestResource.Time
+		out.LatestResourceAt = &t
 	}
 
 	if err := s.pool.QueryRow(ctx, `
@@ -387,16 +419,21 @@ func (s *PGStore) SitesByCell(ctx context.Context) (map[string]int, error) {
 
 func (s *PGStore) Resources(ctx context.Context, f CellFilter, kind string) ([]Resource, error) {
 	query := `SELECT id, kind, COALESCE(name,''), COALESCE(address,''), COALESCE(phone,''),
-			COALESCE(latitude,0), COALESCE(longitude,0), details, status, reported_at
+			COALESCE(latitude,0), COALESCE(longitude,0),
+			COALESCE(location_scope,'point'), COALESCE(municipality,''), COALESCE(department,''),
+			COALESCE(details, '{}'::jsonb), status, reported_at
 		FROM resources
 		WHERE ($1::text IS NULL OR kind = $1)
+		  AND (NOT $2::boolean OR location_scope = 'city'
+			OR geom && ST_MakeEnvelope($3,$4,$5,$6,4326))
 		ORDER BY reported_at DESC
 		LIMIT 500`
 	var kindFilter any
 	if kind != "" {
 		kindFilter = kind
 	}
-	rows, err := s.pool.Query(ctx, query, kindFilter)
+	hasBounds := f.MinLon != 0 || f.MinLat != 0 || f.MaxLon != 0 || f.MaxLat != 0
+	rows, err := s.pool.Query(ctx, query, kindFilter, hasBounds, f.MinLon, f.MinLat, f.MaxLon, f.MaxLat)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +442,8 @@ func (s *PGStore) Resources(ctx context.Context, f CellFilter, kind string) ([]R
 	for rows.Next() {
 		var r Resource
 		if err := rows.Scan(&r.ID, &r.Kind, &r.Name, &r.Address, &r.Phone,
-			&r.Lat, &r.Lon, &r.Details, &r.Status, &r.ReportedAt); err != nil {
+			&r.Lat, &r.Lon, &r.LocationScope, &r.Municipality, &r.Department,
+			&r.Details, &r.Status, &r.ReportedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -418,13 +456,42 @@ func (s *PGStore) InsertResource(ctx context.Context, r Resource) (int64, error)
 	if status == "" {
 		status = "pending"
 	}
-	query := `INSERT INTO resources (kind, name, address, phone, latitude, longitude, geom, details, status)
-		VALUES ($1,$2,$3,$4,$5,$6, ST_SetSRID(ST_MakePoint($6,$5),4326), $7, $8)
+	if r.LocationScope == "" {
+		r.LocationScope = "point"
+	}
+	var lat, lon any = r.Lat, r.Lon
+	if r.LocationScope == "city" {
+		lat, lon = nil, nil
+	}
+	query := `INSERT INTO resources
+		(kind, name, address, phone, latitude, longitude, geom, location_scope, municipality, department, details, status)
+		VALUES ($1,$2,$3,$4,$5,$6,
+			CASE WHEN $5::double precision IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint($6,$5),4326) END,
+			$7,$8,$9,$10,$11)
 		RETURNING id`
 	var id int64
 	err := s.pool.QueryRow(ctx, query, r.Kind, nilStr(r.Name), nilStr(r.Address), nilStr(r.Phone),
-		r.Lat, r.Lon, r.Details, status).Scan(&id)
+		lat, lon, r.LocationScope, r.Municipality, r.Department, r.Details, status).Scan(&id)
 	return id, err
+}
+
+func (s *PGStore) UpdateResource(ctx context.Context, r Resource) error {
+	var lat, lon any = r.Lat, r.Lon
+	if r.LocationScope == "city" {
+		lat, lon = nil, nil
+	}
+	query := `UPDATE resources SET
+		kind = $1, name = $2, address = $3, phone = $4,
+		latitude = $5, longitude = $6,
+		geom = CASE WHEN $5::double precision IS NULL THEN NULL ELSE ST_SetSRID(ST_MakePoint($6,$5),4326) END,
+		location_scope = $7, municipality = $8, department = $9, details = $10, status = $11
+		WHERE id = $12
+		RETURNING id`
+	var id int64
+	return s.pool.QueryRow(ctx, query,
+		r.Kind, nilStr(r.Name), nilStr(r.Address), nilStr(r.Phone),
+		lat, lon, r.LocationScope, r.Municipality, r.Department, r.Details, r.Status, r.ID,
+	).Scan(&id)
 }
 
 func (s *PGStore) UpdateResourceStatus(ctx context.Context, id int64, status string) error {

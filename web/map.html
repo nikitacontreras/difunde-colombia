@@ -8,7 +8,6 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg-primary: #0a0b0d;
@@ -25,7 +24,7 @@
 html, body {
   margin: 0;
   height: 100%;
-  font-family: 'Outfit', system-ui, sans-serif;
+  font-family: "Avenir Next", "Century Gothic", Futura, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   overflow: hidden;
@@ -545,6 +544,8 @@ html, body {
   box-shadow: 0 20px 40px rgba(0,0,0,0.6);
   box-sizing: border-box;
   z-index: 1000000 !important;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
 }
 
 .modal-header {
@@ -580,7 +581,7 @@ html, body {
   font-weight: 500;
 }
 
-.form-group input, .form-group select {
+.form-group input, .form-group select, .form-group textarea {
   width: 100%;
   box-sizing: border-box;
   background: var(--bg-card);
@@ -590,6 +591,65 @@ html, body {
   color: white;
   font-family: inherit;
   font-size: 13px;
+}
+
+.form-group textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.form-help {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.location-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.location-choice label {
+  margin: 0;
+  cursor: pointer;
+}
+
+.location-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.location-choice span {
+  display: grid;
+  min-height: 58px;
+  align-content: center;
+  padding: 9px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.location-choice input:checked + span {
+  border-color: var(--accent-color);
+  background: rgba(37, 99, 235, 0.12);
+  color: var(--text-primary);
+}
+
+.btn-pick-location {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-color);
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #dbeafe;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Map overlay indicator for Add point */
@@ -908,7 +968,7 @@ html, body {
       <div class="sidebar-actions">
         <button class="btn-add-point" id="btn-trigger-add">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          REPORTAR AYUDA
+          PUBLICAR AYUDA
         </button>
         <button class="btn-options" id="btn-toggle-connectivity" title="Filtros de Conectividad">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h.01M8 16a5 5 0 018 0M5 12a9 9 0 0114 0M2 8a13 13 0 0120 0"/></svg>
@@ -985,7 +1045,7 @@ html, body {
           </div>
 
           <div>
-            <div class="detail-section-title">Gente en el punto</div>
+            <div class="detail-section-title" id="detail-counters-title">Gente en el punto</div>
             <div class="counter-row">
               <div style="display:flex; align-items:center; gap:12px;">
                 <span class="counter-val" id="val-helping" style="font-size:24px; font-weight:700; color:#3b82f6;">0</span>
@@ -1164,13 +1224,21 @@ html, body {
 <div id="add-point-modal">
   <div class="modal-content">
     <div class="modal-header">
-      <h3 class="modal-title">Añadir punto de ayuda</h3>
+      <h3 class="modal-title">Publicar ayuda u ofrecimiento</h3>
       <button class="modal-close" id="btn-modal-close">×</button>
     </div>
     <form id="add-point-form">
       <div class="form-group">
+        <label>¿Qué quieres publicar?</label>
+        <select id="modal-intent" required>
+          <option value="offer">Estoy ofreciendo ayuda</option>
+          <option value="request">Estoy solicitando ayuda</option>
+        </select>
+      </div>
+      <div class="form-group">
         <label>Tipo de reporte</label>
         <select id="modal-kind" required>
+          <option value="logistica">Logística / Transporte (Volquetas, etc.)</option>
           <option value="centro_acopio">Centro de Acopio</option>
           <option value="olla_comunitaria">Olla Comunitaria</option>
           <option value="hospital">Punto de Salud / Hospital</option>
@@ -1180,7 +1248,6 @@ html, body {
           <option value="internet">Punto de Acceso Internet</option>
           <option value="via_bloqueada">Vía Bloqueada</option>
           <option value="afectacion_estructural">Afectación Estructural</option>
-          <option value="logistica">Logística / Transporte (Volquetas, etc.)</option>
         </select>
       </div>
       <div class="form-group">
@@ -1188,8 +1255,30 @@ html, body {
         <input type="text" id="modal-name" placeholder="Ej. Polideportivo San Pedro" required>
       </div>
       <div class="form-group">
-        <label>Dirección / Ubicación específica</label>
-        <input type="text" id="modal-address" placeholder="Ej. Calle 5 # 12-30" required>
+        <label>¿Dónde aplica?</label>
+        <div class="location-choice">
+          <label><input type="radio" name="modal-scope" value="city" checked><span>Toda una ciudad<br><small>Sin punto fijo</small></span></label>
+          <label><input type="radio" name="modal-scope" value="point"><span>Punto exacto<br><small>Con coordenadas</small></span></label>
+        </div>
+      </div>
+      <div id="modal-city-fields">
+        <div class="form-group">
+          <label>Municipio o ciudad</label>
+          <input type="text" id="modal-municipality" placeholder="Ej. Pereira">
+        </div>
+        <div class="form-group">
+          <label>Departamento (opcional)</label>
+          <input type="text" id="modal-department" placeholder="Ej. Risaralda">
+        </div>
+      </div>
+      <div class="form-group" id="modal-point-fields" hidden>
+        <label>Ubicación exacta</label>
+        <button class="btn-pick-location" id="btn-pick-report-location" type="button">Seleccionar punto en el mapa</button>
+        <p class="form-help" id="picked-location-status">Aún no has seleccionado un punto.</p>
+      </div>
+      <div class="form-group">
+        <label>Dirección, barrios o zona cubierta (opcional)</label>
+        <input type="text" id="modal-address" placeholder="Ej. Toda Pereira o Calle 5 # 12-30">
       </div>
       <div class="form-group">
         <label>Teléfono contacto (opcional)</label>
@@ -1199,12 +1288,16 @@ html, body {
         <label>Urgencia</label>
         <select id="modal-urgency">
           <option value="urgente">Urgente</option>
-          <option value="normal">Normal</option>
+          <option value="normal" selected>Normal</option>
         </select>
       </div>
       <div class="form-group">
-        <label>Necesidades iniciales (separadas por comas)</label>
-        <input type="text" id="modal-needs" placeholder="Ej. Colchonetas, Pañales, Agua">
+        <label>Descripción</label>
+        <textarea id="modal-description" placeholder="Describe qué ofreces o necesitas, capacidad y cómo coordinar."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Etiquetas o necesidades (separadas por comas)</label>
+        <input type="text" id="modal-needs" placeholder="Ej. Transporte, Camión, Agua">
       </div>
       <button type="submit" class="btn-add-point" style="width:100%; margin-top:10px;">ENVIAR REPORTE</button>
     </form>

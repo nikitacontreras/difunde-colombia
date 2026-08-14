@@ -97,14 +97,18 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	s.mux.HandleFunc("GET /admin", s.handleAdmin)
 	s.mux.HandleFunc("GET /admin/", func(w http.ResponseWriter, r *http.Request) {
+		if !s.requireAdmin(w, r) {
+			return
+		}
 		http.Redirect(w, r, "/admin", http.StatusMovedPermanently)
 	})
-	s.mux.HandleFunc("POST /admin/session", s.handleAdminSession)
-	s.mux.HandleFunc("POST /admin/logout", s.handleAdminLogout)
 	s.mux.HandleFunc("GET /admin/api/overview", s.handleAdminOverview)
 	s.mux.HandleFunc("GET /admin/api/observations", s.handleAdminObservations)
-	s.mux.HandleFunc("GET /admin.css", s.handleAsset("admin.css"))
-	s.mux.HandleFunc("GET /admin.js", s.handleAsset("admin.js"))
+	s.mux.HandleFunc("GET /admin/api/resources", s.handleAdminResources)
+	s.mux.HandleFunc("POST /admin/api/resources", s.handleAdminCreateResource)
+	s.mux.HandleFunc("PUT /admin/api/resources/{id}", s.handleAdminUpdateResource)
+	s.mux.HandleFunc("GET /admin.css", s.handleAdminAsset("admin.css"))
+	s.mux.HandleFunc("GET /admin.js", s.handleAdminAsset("admin.js"))
 	s.mux.HandleFunc("GET /map", s.handleMap)
 	s.mux.HandleFunc("GET /app.js", s.handleAsset("app.js"))
 	s.mux.HandleFunc("GET /map.js", s.handleAsset("map.js"))
@@ -206,7 +210,15 @@ func (s *Server) invalidateCaches() {
 }
 
 func (s *Server) adminAllowed(r *http.Request) bool {
-	return adminHeaderValid(r) || adminSessionValid(r)
+	return adminHeaderValid(r)
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if !s.adminAllowed(r) {
+		http.NotFound(w, r)
+		return false
+	}
+	return true
 }
 
 func (s *Server) serveCachedJSON(w http.ResponseWriter, r *http.Request, key string, ttl time.Duration, cacheControl string, compute func() ([]byte, int, error)) (bool, int) {
@@ -931,7 +943,83 @@ var resourceKinds = map[string]bool{
 	"centro_acopio": true, "hospital": true, "refugio": true,
 	"agua": true, "energia": true, "internet": true,
 	"via_bloqueada": true, "afectacion_estructural": true,
-	"olla_comunitaria": true,
+	"olla_comunitaria": true, "logistica": true,
+}
+
+type resourcePayload struct {
+	Kind          string         `json:"kind"`
+	Name          string         `json:"name"`
+	Address       string         `json:"address"`
+	Phone         string         `json:"phone"`
+	Lat           *float64       `json:"lat"`
+	Lon           *float64       `json:"lon"`
+	LocationScope string         `json:"location_scope"`
+	Municipality  string         `json:"municipality"`
+	Department    string         `json:"department"`
+	Details       map[string]any `json:"details"`
+	Status        string         `json:"status"`
+	Nonce         string         `json:"nonce"`
+}
+
+func resourceFromPayload(body resourcePayload, allowStatus bool) (store.Resource, error) {
+	body.Kind = strings.ToLower(strings.TrimSpace(body.Kind))
+	body.Name = strings.TrimSpace(body.Name)
+	body.Address = strings.TrimSpace(body.Address)
+	body.Phone = strings.TrimSpace(body.Phone)
+	body.LocationScope = strings.ToLower(strings.TrimSpace(body.LocationScope))
+	body.Municipality = strings.TrimSpace(body.Municipality)
+	body.Department = strings.TrimSpace(body.Department)
+	body.Status = strings.ToLower(strings.TrimSpace(body.Status))
+	if body.LocationScope == "" {
+		body.LocationScope = "point"
+	}
+	if !resourceKinds[body.Kind] {
+		return store.Resource{}, fmt.Errorf("bad kind")
+	}
+	if body.Name == "" || len(body.Name) > 160 || len(body.Address) > 240 || len(body.Phone) > 60 ||
+		len(body.Municipality) > 120 || len(body.Department) > 120 {
+		return store.Resource{}, fmt.Errorf("bad fields")
+	}
+	if body.LocationScope != "point" && body.LocationScope != "city" {
+		return store.Resource{}, fmt.Errorf("bad location scope")
+	}
+	var lat, lon float64
+	if body.LocationScope == "city" {
+		if body.Municipality == "" {
+			return store.Resource{}, fmt.Errorf("missing municipality")
+		}
+	} else {
+		if body.Lat == nil || body.Lon == nil || (*body.Lat == 0 && *body.Lon == 0) ||
+			*body.Lat < -90 || *body.Lat > 90 || *body.Lon < -180 || *body.Lon > 180 {
+			return store.Resource{}, fmt.Errorf("bad coords")
+		}
+		lat, lon = *body.Lat, *body.Lon
+	}
+	if body.Details == nil {
+		body.Details = map[string]any{}
+	}
+	if intent, ok := body.Details["intent"].(string); ok && intent != "" && intent != "offer" && intent != "request" {
+		return store.Resource{}, fmt.Errorf("bad intent")
+	}
+	if !allowStatus || body.Status == "" {
+		body.Status = "pending"
+	}
+	if body.Status != "pending" && body.Status != "approved" && body.Status != "rejected" {
+		return store.Resource{}, fmt.Errorf("bad status")
+	}
+	return store.Resource{
+		Kind:          body.Kind,
+		Name:          body.Name,
+		Address:       body.Address,
+		Phone:         body.Phone,
+		Lat:           lat,
+		Lon:           lon,
+		LocationScope: body.LocationScope,
+		Municipality:  body.Municipality,
+		Department:    body.Department,
+		Details:       body.Details,
+		Status:        body.Status,
+	}, nil
 }
 
 func (s *Server) handleResources(w http.ResponseWriter, r *http.Request) {
@@ -1021,26 +1109,14 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		tooManyRequests(w, time.Minute)
 		return
 	}
-	var body struct {
-		Kind    string         `json:"kind"`
-		Name    string         `json:"name"`
-		Address string         `json:"address"`
-		Phone   string         `json:"phone"`
-		Lat     float64        `json:"lat"`
-		Lon     float64        `json:"lon"`
-		Details map[string]any `json:"details"`
-		Nonce   string         `json:"nonce"`
-	}
+	var body resourcePayload
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad payload", http.StatusBadRequest)
 		return
 	}
-	if !resourceKinds[body.Kind] {
-		http.Error(w, "bad kind", http.StatusBadRequest)
-		return
-	}
-	if body.Lat < -90 || body.Lat > 90 || body.Lon < -180 || body.Lon > 180 {
-		http.Error(w, "bad coords", http.StatusBadRequest)
+	resource, err := resourceFromPayload(body, false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1058,10 +1134,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	id, err := s.store.InsertResource(r.Context(), store.Resource{
-		Kind: body.Kind, Name: body.Name, Address: body.Address, Phone: body.Phone,
-		Lat: body.Lat, Lon: body.Lon, Details: body.Details, Status: "pending",
-	})
+	id, err := s.store.InsertResource(r.Context(), resource)
 	if err != nil {
 		http.Error(w, "storage error", http.StatusServiceUnavailable)
 		return
@@ -1131,7 +1204,7 @@ func (s *Server) handleModerateResource(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !s.adminAllowed(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		http.NotFound(w, r)
 		return
 	}
 
@@ -1165,30 +1238,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 // ---- Admin ----
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	w.Header().Set("Content-Security-Policy",
 		"default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
-	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write(web.AdminHTML)
 }
 
-func (s *Server) handleAdminSession(w http.ResponseWriter, r *http.Request) {
-	if !adminHeaderValid(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	setAdminSessionCookie(w, r)
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleAdminLogout(w http.ResponseWriter, r *http.Request) {
-	clearAdminSessionCookie(w, r)
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
-	if !s.adminAllowed(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !s.requireAdmin(w, r) {
 		return
 	}
 	overview, err := s.store.AdminOverview(r.Context())
@@ -1202,8 +1263,7 @@ func (s *Server) handleAdminOverview(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAdminObservations(w http.ResponseWriter, r *http.Request) {
-	if !s.adminAllowed(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !s.requireAdmin(w, r) {
 		return
 	}
 	limit := 50
@@ -1245,6 +1305,73 @@ func (s *Server) handleAdminObservations(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, page)
 }
 
+func (s *Server) handleAdminResources(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	resources, err := s.store.Resources(r.Context(), store.CellFilter{}, "")
+	if err != nil {
+		slog.Error("admin resources", "err", err)
+		http.Error(w, "storage error", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, resources)
+}
+
+func (s *Server) handleAdminCreateResource(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var body resourcePayload
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+	resource, err := resourceFromPayload(body, true)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	id, err := s.store.InsertResource(r.Context(), resource)
+	if err != nil {
+		slog.Error("admin create resource", "err", err)
+		http.Error(w, "storage error", http.StatusServiceUnavailable)
+		return
+	}
+	s.invalidateCaches()
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusCreated, map[string]int64{"id": id})
+}
+
+func (s *Server) handleAdminUpdateResource(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	var body resourcePayload
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad payload", http.StatusBadRequest)
+		return
+	}
+	resource, err := resourceFromPayload(body, true)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	resource.ID = id
+	if err := s.store.UpdateResource(r.Context(), resource); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.invalidateCaches()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ---- Páginas ----
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -1281,6 +1408,21 @@ func (s *Server) handleAsset(name string) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
+		serveAsset(w, r, data, ctype)
+	}
+}
+
+func (s *Server) handleAdminAsset(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.requireAdmin(w, r) {
+			return
+		}
+		data, ctype, ok := web.Asset(name)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
 		serveAsset(w, r, data, ctype)
 	}
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -171,6 +172,12 @@ func (m *MemStore) AdminOverview(ctx context.Context) (AdminOverview, error) {
 		out.ObservationsTotal++
 		if o.ObservedAt.After(now.Add(-24 * time.Hour)) {
 			out.Observations24h++
+			if o.HttpRTTMedian >= 800 || o.SuccessRatio < 0.6 || o.CallSignal == "no" {
+				out.ObservationsRisk24h++
+			}
+			if o.SaveData {
+				out.ObservationsSaveData++
+			}
 		}
 		if o.ObservedAt.After(now.Add(-7 * 24 * time.Hour)) {
 			out.Observations7d++
@@ -185,6 +192,23 @@ func (m *MemStore) AdminOverview(ctx context.Context) (AdminOverview, error) {
 	}
 	for _, r := range m.resources {
 		out.ResourcesTotal++
+		if out.LatestResourceAt == nil || r.ReportedAt.After(*out.LatestResourceAt) {
+			t := r.ReportedAt
+			out.LatestResourceAt = &t
+		}
+		if r.LocationScope == "city" {
+			out.ResourcesCityScope++
+		} else {
+			out.ResourcesPointScope++
+		}
+		if r.Kind == "logistica" {
+			out.ResourcesLogistics++
+		}
+		if intent, _ := r.Details["intent"].(string); intent == "offer" {
+			out.ResourcesOffers++
+		} else if intent == "request" {
+			out.ResourcesRequests++
+		}
 		switch strings.ToLower(strings.TrimSpace(r.Status)) {
 		case "approved":
 			out.ResourcesApproved++
@@ -317,6 +341,11 @@ func (m *MemStore) Resources(ctx context.Context, f CellFilter, kind string) ([]
 		if kind != "" && r.Kind != kind {
 			continue
 		}
+		hasBounds := f.MinLon != 0 || f.MinLat != 0 || f.MaxLon != 0 || f.MaxLat != 0
+		if hasBounds && r.LocationScope != "city" &&
+			(r.Lon < f.MinLon || r.Lon > f.MaxLon || r.Lat < f.MinLat || r.Lat > f.MaxLat) {
+			continue
+		}
 		out = append(out, r)
 	}
 	return out, nil
@@ -330,8 +359,27 @@ func (m *MemStore) InsertResource(ctx context.Context, r Resource) (int64, error
 	if r.Status == "" {
 		r.Status = "pending"
 	}
+	if r.LocationScope == "" {
+		r.LocationScope = "point"
+	}
+	if r.ReportedAt.IsZero() {
+		r.ReportedAt = time.Now().UTC()
+	}
 	m.resources = append(m.resources, r)
 	return r.ID, nil
+}
+
+func (m *MemStore) UpdateResource(ctx context.Context, r Resource) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.resources {
+		if m.resources[i].ID == r.ID {
+			r.ReportedAt = m.resources[i].ReportedAt
+			m.resources[i] = r
+			return nil
+		}
+	}
+	return errors.New("resource not found")
 }
 
 func (m *MemStore) UpdateResourceStatus(ctx context.Context, id int64, status string) error {
@@ -434,7 +482,6 @@ func (m *MemStore) SetSynthesis(rows []CoverageSynthesisRow, cells map[string][]
 	m.synthCells = cells
 	m.synthMeta = meta
 }
-
 
 func (m *MemStore) OfficialSites(ctx context.Context, municipality string) ([]OfficialSitesRow, error) {
 	m.mu.Lock()

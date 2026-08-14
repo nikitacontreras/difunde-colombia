@@ -594,6 +594,30 @@ function apiFetch(input, init) {
     return "normal";
   }
 
+  function getResourceScope(r) {
+    return String(r.LocationScope || "point").toLowerCase();
+  }
+
+  function getResourceIntent(r) {
+    return String((r.Details && r.Details.intent) || "request").toLowerCase();
+  }
+
+  function resourceLocationLabel(r) {
+    if (getResourceScope(r) === "city") {
+      return [r.Municipality, r.Department].filter(Boolean).join(", ") || "Cobertura por ciudad";
+    }
+    return r.Address || "Ubicación puntual";
+  }
+
+  function escapeHTML(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   // Render Sidebar List
   function renderReportList() {
     var filtered = allResources.filter(function (r) {
@@ -619,13 +643,15 @@ function apiFetch(input, init) {
         var query = searchQuery.toLowerCase();
         var nameMatch = (r.Name || "").toLowerCase().indexOf(query) !== -1;
         var addrMatch = (r.Address || "").toLowerCase().indexOf(query) !== -1;
+        var cityMatch = (r.Municipality || "").toLowerCase().indexOf(query) !== -1 ||
+          (r.Department || "").toLowerCase().indexOf(query) !== -1;
         var needsMatch = false;
         if (r.Details && Array.isArray(r.Details.needs)) {
           needsMatch = r.Details.needs.some(function (n) {
             return n.toLowerCase().indexOf(query) !== -1;
           });
         }
-        if (!nameMatch && !addrMatch && !needsMatch) return false;
+        if (!nameMatch && !addrMatch && !cityMatch && !needsMatch) return false;
       }
       return true;
     });
@@ -633,6 +659,12 @@ function apiFetch(input, init) {
     // Sort by relative distance if user location is known, else by date
     filtered.sort(function (a, b) {
       if (userLatLng) {
+        var aCity = getResourceScope(a) === "city";
+        var bCity = getResourceScope(b) === "city";
+        if (aCity || bCity) {
+          if (aCity !== bCity) return aCity ? -1 : 1;
+          return new Date(b.ReportedAt).getTime() - new Date(a.ReportedAt).getTime();
+        }
         var distA = getDistance(userLatLng.lat, userLatLng.lng, a.Lat, a.Lon);
         var distB = getDistance(userLatLng.lat, userLatLng.lng, b.Lat, b.Lon);
         return distA - distB;
@@ -666,7 +698,8 @@ function apiFetch(input, init) {
     }
 
     filtered.forEach(function (r) {
-      var distStr = userLatLng ? formatDistance(getDistance(userLatLng.lat, userLatLng.lng, r.Lat, r.Lon)) : "";
+      var cityScope = getResourceScope(r) === "city";
+      var distStr = userLatLng && !cityScope ? formatDistance(getDistance(userLatLng.lat, userLatLng.lng, r.Lat, r.Lon)) : "";
       var timeStr = formatRelativeTime(r.ReportedAt);
       
       var urgency = getResourceUrgency(r);
@@ -685,23 +718,31 @@ function apiFetch(input, init) {
       if (distStr) {
         badgesHtml += '<span class="badge badge-distance">' + distStr + '</span>';
       }
+      if (cityScope) {
+        badgesHtml += '<span class="badge badge-distance">COBERTURA: ' + escapeHTML(r.Municipality || "CIUDAD") + '</span>';
+      }
+      if (getResourceIntent(r) === "offer") {
+        badgesHtml += '<span class="badge badge-info">OFRECIMIENTO</span>';
+      }
 
       var needsListStr = "";
       if (r.Details && Array.isArray(r.Details.needs) && r.Details.needs.length > 0) {
-        needsListStr = "Se necesita: " + r.Details.needs.join(", ");
+        needsListStr = (getResourceIntent(r) === "offer" ? "Disponible: " : "Se necesita: ") + r.Details.needs.join(", ");
+      } else if (r.Details && r.Details.description) {
+        needsListStr = r.Details.description;
       } else {
-        needsListStr = "Sin requerimientos específicos reportados.";
+        needsListStr = getResourceIntent(r) === "offer" ? "Oferta disponible para coordinación." : "Sin requerimientos específicos reportados.";
       }
 
       var div = document.createElement("div");
       div.className = "report-item";
       div.innerHTML = `
         <div class="report-item-header">
-          <h4 class="report-item-title">${r.Name || "Reporte sin título"}</h4>
-          <span class="report-item-time">${timeStr}</span>
+          <h4 class="report-item-title">${escapeHTML(r.Name || "Reporte sin título")}</h4>
+          <span class="report-item-time">${escapeHTML(timeStr)}</span>
         </div>
         <div class="badge-row">${badgesHtml}</div>
-        <p class="report-item-desc">${needsListStr}</p>
+        <p class="report-item-desc">${escapeHTML(needsListStr)}</p>
       `;
 
       div.addEventListener("click", function () {
@@ -715,6 +756,7 @@ function apiFetch(input, init) {
   function drawResourceMarkers() {
     resourceMarkersGroup.clearLayers();
     allResources.forEach(function (r) {
+      if (getResourceScope(r) === "city") return;
       var urgency = getResourceUrgency(r);
       var needed = (r.Details && r.Details.needed) || 0;
       var helping = (r.Details && r.Details.helping) || 0;
@@ -747,7 +789,10 @@ function apiFetch(input, init) {
     selectedResource = r;
     
     document.getElementById("detail-card-title").textContent = r.Name;
-    document.getElementById("detail-card-desc").textContent = r.Address + (r.Phone ? " · Tel: " + r.Phone : "");
+    var descriptionParts = [resourceLocationLabel(r)];
+    if (r.Phone) descriptionParts.push("Tel: " + r.Phone);
+    if (r.Details && r.Details.description) descriptionParts.push(r.Details.description);
+    document.getElementById("detail-card-desc").textContent = descriptionParts.join(" · ");
     
     // Set counters
     document.getElementById("val-helping").textContent = (r.Details && r.Details.helping) || 0;
@@ -755,9 +800,12 @@ function apiFetch(input, init) {
 
     // Badges
     var urgency = getResourceUrgency(r);
-    var badgHtml = `<span class="badge ${urgency === 'urgente' ? 'badge-urgent' : 'badge-info'}">${urgency.toUpperCase()}</span>`;
-    badgHtml += `<span class="badge badge-warning">${r.Kind.replace("_", " ").toUpperCase()}</span>`;
+    var badgHtml = `<span class="badge ${urgency === 'urgente' ? 'badge-urgent' : 'badge-info'}">${escapeHTML(urgency.toUpperCase())}</span>`;
+    badgHtml += `<span class="badge badge-warning">${escapeHTML(r.Kind.replace("_", " ").toUpperCase())}</span>`;
+    if (getResourceScope(r) === "city") badgHtml += `<span class="badge badge-distance">TODA ${escapeHTML(r.Municipality || "LA CIUDAD").toUpperCase()}</span>`;
+    if (getResourceIntent(r) === "offer") badgHtml += `<span class="badge badge-info">OFRECIMIENTO</span>`;
     document.getElementById("detail-card-badges").innerHTML = badgHtml;
+    document.getElementById("detail-counters-title").textContent = getResourceScope(r) === "city" ? "Personas coordinando" : "Gente en el punto";
 
     // Votes / confirmations
     var confirms = (r.Details && r.Details.confirms) || 0;
@@ -765,7 +813,8 @@ function apiFetch(input, init) {
     document.getElementById("detail-card-votes").textContent = confirms + " confirman · " + dismisses + " desmienten";
 
     // Google Maps link
-    document.getElementById("btn-gmaps").href = "https://www.google.com/maps/search/?api=1&query=" + r.Lat + "," + r.Lon;
+    var mapsQuery = getResourceScope(r) === "city" ? resourceLocationLabel(r) : r.Lat + "," + r.Lon;
+    document.getElementById("btn-gmaps").href = "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(mapsQuery);
 
     // Render Needs
     renderNeedsTags(r);
@@ -809,7 +858,9 @@ function apiFetch(input, init) {
     document.getElementById("detail-panel").classList.add("open");
 
     // Center map on selected resource
-    map.setView([r.Lat, r.Lon], 16);
+    if (getResourceScope(r) !== "city") {
+      map.setView([r.Lat, r.Lon], 16);
+    }
   }
 
   function renderNeedsTags(r) {
@@ -823,11 +874,16 @@ function apiFetch(input, init) {
     needs.forEach(function (n, index) {
       var span = document.createElement("span");
       span.className = "need-tag";
-      span.innerHTML = `${n} <span class="need-remove" data-index="${index}">×</span>`;
-      span.querySelector(".need-remove").addEventListener("click", function (e) {
+      span.appendChild(document.createTextNode(String(n) + " "));
+      var remove = document.createElement("span");
+      remove.className = "need-remove";
+      remove.setAttribute("data-index", String(index));
+      remove.textContent = "×";
+      remove.addEventListener("click", function (e) {
         e.stopPropagation();
         removeNeed(index);
       });
+      span.appendChild(remove);
       container.appendChild(span);
     });
   }
@@ -942,7 +998,7 @@ function apiFetch(input, init) {
     if (navigator.share) {
       navigator.share({
         title: selectedResource.Name,
-        text: selectedResource.Address + " - Necesita ayuda urgente.",
+        text: resourceLocationLabel(selectedResource) + (getResourceIntent(selectedResource) === "offer" ? " - Ofrecimiento de ayuda disponible." : " - Solicitud de ayuda vigente."),
         url: window.location.href
       });
     } else {
@@ -975,9 +1031,34 @@ function apiFetch(input, init) {
     document.getElementById("connectivity-drawer").classList.remove("open");
   });
 
-  // Add Point Trigger
+  function reportScope() {
+    var checked = document.querySelector('input[name="modal-scope"]:checked');
+    return checked ? checked.value : "city";
+  }
+
+  function updateReportScope() {
+    var city = reportScope() === "city";
+    document.getElementById("modal-city-fields").hidden = !city;
+    document.getElementById("modal-point-fields").hidden = city;
+    document.getElementById("modal-municipality").required = city;
+    document.getElementById("picked-location-status").textContent = pickedLatLng
+      ? "Punto seleccionado: " + pickedLatLng.lat.toFixed(5) + ", " + pickedLatLng.lng.toFixed(5)
+      : "Aún no has seleccionado un punto.";
+  }
+
+  document.querySelectorAll('input[name="modal-scope"]').forEach(function (radio) {
+    radio.addEventListener("change", updateReportScope);
+  });
+
+  // El formulario decide primero entre cobertura por ciudad o punto exacto.
   document.getElementById("btn-trigger-add").addEventListener("click", function () {
+    document.getElementById("add-point-modal").classList.add("open");
+    updateReportScope();
+  });
+
+  document.getElementById("btn-pick-report-location").addEventListener("click", function () {
     isPickingLocation = true;
+    document.getElementById("add-point-modal").classList.remove("open");
     document.getElementById("map-pick-indicator").style.display = "block";
     toast("Haz click en el mapa para ubicar el punto");
   });
@@ -987,16 +1068,13 @@ function apiFetch(input, init) {
       isPickingLocation = false;
       document.getElementById("map-pick-indicator").style.display = "none";
       pickedLatLng = e.latlng;
+      updateReportScope();
       document.getElementById("add-point-modal").classList.add("open");
     } else {
       queryCoverageAt(e.latlng);
     }
   });
 
-  document.getElementById("btn-modal-close").addEventListener("click", function () {
-    document.getElementById("add-point-modal").classList.remove("open");
-    pickedLatLng = null;
-  });
   // ---- Cobertura por datos (municipio + punto) ----
   var municipios = null;
   var synthesisAbort = null;
@@ -1145,6 +1223,14 @@ function apiFetch(input, init) {
 
   loadMunicipios();
 
+  document.getElementById("btn-modal-close").addEventListener("click", function () {
+    document.getElementById("add-point-modal").classList.remove("open");
+    pickedLatLng = null;
+    isPickingLocation = false;
+    document.getElementById("map-pick-indicator").style.display = "none";
+    updateReportScope();
+  });
+
   // Proof of work helper (native anti-spam)
   async function solvePoW(kind, name) {
     var prefix = "00";
@@ -1162,16 +1248,24 @@ function apiFetch(input, init) {
     }
   }
 
-  // Handle new point submit
+  // Handle new resource submit
   document.getElementById("add-point-form").addEventListener("submit", async function (e) {
     e.preventDefault();
-    if (!pickedLatLng) return;
 
+    var scope = reportScope();
+    if (scope === "point" && !pickedLatLng) {
+      toast("Selecciona primero el punto exacto en el mapa.");
+      return;
+    }
     var kind = document.getElementById("modal-kind").value;
     var name = document.getElementById("modal-name").value;
+    var intent = document.getElementById("modal-intent").value;
     var address = document.getElementById("modal-address").value;
     var phone = document.getElementById("modal-phone").value;
+    var municipality = document.getElementById("modal-municipality").value;
+    var department = document.getElementById("modal-department").value;
     var urgency = document.getElementById("modal-urgency").value;
+    var description = document.getElementById("modal-description").value;
     var rawNeeds = document.getElementById("modal-needs").value;
     
     var needsArr = rawNeeds.split(",").map(s => s.trim()).filter(Boolean);
@@ -1184,11 +1278,14 @@ function apiFetch(input, init) {
       name: name,
       address: address,
       phone: phone,
-      lat: pickedLatLng.lat,
-      lon: pickedLatLng.lng,
+      location_scope: scope,
+      municipality: scope === "city" ? municipality : "",
+      department: scope === "city" ? department : "",
       nonce: nonce,
       details: {
+        intent: intent,
         urgency: urgency,
+        description: description,
         needs: needsArr,
         helping: 0,
         needed: 0,
@@ -1196,6 +1293,10 @@ function apiFetch(input, init) {
         dismisses: 0
       }
     };
+    if (scope === "point") {
+      payload.lat = pickedLatLng.lat;
+      payload.lon = pickedLatLng.lng;
+    }
 
     apiFetch("/report", {
       method: "POST",
@@ -1206,6 +1307,8 @@ function apiFetch(input, init) {
         toast("Reporte enviado exitosamente");
         document.getElementById("add-point-modal").classList.remove("open");
         document.getElementById("add-point-form").reset();
+        pickedLatLng = null;
+        updateReportScope();
         refresh(true);
       } else {
         toast("Error al registrar el reporte.");
@@ -1214,6 +1317,8 @@ function apiFetch(input, init) {
       toast("Error de red.");
     });
   });
+
+  updateReportScope();
 
   // Load connectivity operators rankings
   function updateRankings(cells) {

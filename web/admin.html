@@ -3,92 +3,113 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#08111f">
-<title>Colombia Difunde · Admin</title>
+<meta name="theme-color" content="#163d2c">
+<meta name="description" content="Centro de operaciones de Colombia Difunde">
+<title>Centro de operaciones · Colombia Difunde</title>
 <link rel="stylesheet" href="/admin.css">
 </head>
 <body>
-<div class="shell">
-  <div class="shell-bg" aria-hidden="true"></div>
-
+<a class="skip-link" href="#main-content">Saltar al contenido</a>
+<div class="page-shell">
   <header class="topbar">
-    <div class="brand-block">
-      <span class="eyebrow">Panel administrativo</span>
+    <div class="brand-mark" aria-hidden="true"><span>CD</span></div>
+    <div class="brand-copy">
+      <span class="eyebrow">Centro de operaciones</span>
       <h1>Colombia Difunde</h1>
-      <p>Moderación, histórico de observaciones y control operativo desde un solo lugar.</p>
+    </div>
+    <div class="topbar-status">
+      <span class="access-state"><i></i> X-Admin-Key verificado</span>
+      <span id="network-state" class="network-state">En línea</span>
     </div>
     <div class="topbar-actions">
-      <div class="session-pill" id="session-pill">sesión inactiva</div>
-      <a class="ghost-button" href="/map">Abrir mapa</a>
-      <button class="ghost-button" id="btn-refresh" type="button">Actualizar</button>
-      <button class="ghost-button danger" id="btn-logout" type="button">Salir</button>
+      <a class="button button-quiet" href="/map">Ver mapa</a>
+      <button class="button button-ink" id="btn-refresh" type="button">Actualizar datos</button>
     </div>
   </header>
 
-  <main id="dashboard" class="dashboard" hidden>
-    <section class="summary-grid" aria-label="Resumen operativo">
-      <article class="metric-card">
-        <span class="metric-label">Observaciones</span>
+  <main id="main-content" class="main-content">
+    <section class="pulse" aria-labelledby="pulse-title">
+      <div class="pulse-lead">
+        <span class="section-index">01 / pulso</span>
+        <h2 id="pulse-title">Estado operativo</h2>
+        <p id="stat-updated">Consultando la actividad más reciente.</p>
+      </div>
+      <div class="metric metric-primary">
+        <span>Observaciones</span>
         <strong id="stat-observations">0</strong>
-        <span id="stat-observations-sub" class="metric-sub">histórico total</span>
-      </article>
-      <article class="metric-card">
-        <span class="metric-label">Últimas 24 h</span>
-        <strong id="stat-24h">0</strong>
-        <span class="metric-sub">observaciones recientes</span>
-      </article>
-      <article class="metric-card">
-        <span class="metric-label">Recursos</span>
+        <small><b id="stat-24h">0</b> en 24 h · <b id="stat-7d">0</b> en 7 días</small>
+      </div>
+      <div class="metric metric-alert">
+        <span>Señales de riesgo</span>
+        <strong id="stat-risk">0</strong>
+        <small>RTT alto, fallos o sin llamada en 24 h</small>
+      </div>
+      <div class="metric">
+        <span>Recursos</span>
         <strong id="stat-resources">0</strong>
-        <span id="stat-resources-sub" class="metric-sub">publicados y pendientes</span>
-      </article>
-      <article class="metric-card">
-        <span class="metric-label">Activos</span>
+        <small id="stat-resources-sub">0 pendientes</small>
+      </div>
+      <div class="metric">
+        <span>Ofertas por ciudad</span>
+        <strong id="stat-city-offers">0</strong>
+        <small id="stat-city-offers-sub">0 ofertas · 0 logística</small>
+      </div>
+      <div class="metric metric-compact">
+        <span>Operadores detectados</span>
         <strong id="stat-operators">0</strong>
-        <span id="stat-updated" class="metric-sub">sin actualización aún</span>
-      </article>
-    </section>
-
-    <section class="toolbar">
-      <div class="tabs" role="tablist" aria-label="Secciones admin">
-        <button class="tab-button active" type="button" data-tab="observations">Observaciones</button>
-        <button class="tab-button" type="button" data-tab="resources">Recursos</button>
-      </div>
-
-      <div class="filter-bar">
-        <label>
-          Buscar
-          <input id="search-input" type="search" placeholder="ID, operador, H3, IP, call signal">
-        </label>
-        <label>
-          Operador
-          <input id="operator-input" type="search" placeholder="claro, movistar...">
-        </label>
-        <label>
-          Límite
-          <select id="limit-select">
-            <option value="25">25</option>
-            <option value="50" selected>50</option>
-            <option value="100">100</option>
-            <option value="200">200</option>
-          </select>
-        </label>
+        <small id="stat-save-data">0 usuarios con ahorro de datos</small>
       </div>
     </section>
+
+    <nav class="section-nav" aria-label="Secciones administrativas">
+      <div class="tabs" role="tablist">
+        <button class="tab-button active" type="button" data-tab="observations" role="tab" aria-selected="true">Observaciones</button>
+        <button class="tab-button" type="button" data-tab="resources" role="tab" aria-selected="false">Recursos <span id="pending-nav-count">0</span></button>
+        <button class="tab-button tab-create" type="button" data-tab="editor" role="tab" aria-selected="false">+ Agregar información</button>
+      </div>
+      <div id="panel-message" class="panel-message" role="status" aria-live="polite"></div>
+    </nav>
 
     <section class="workspace">
       <div class="content-stack">
-        <section class="panel active" id="panel-observations" aria-label="Histórico de observaciones">
-          <div class="panel-head">
+        <section class="panel active" id="panel-observations" data-panel="observations" aria-labelledby="observations-title">
+          <div class="panel-heading">
             <div>
-              <h2>Histórico de observaciones</h2>
-              <p id="observations-meta">Cargando...</p>
+              <span class="section-index">02 / evidencia</span>
+              <h2 id="observations-title">Histórico de observaciones</h2>
+              <p id="observations-meta">Cargando registros...</p>
             </div>
-            <div class="panel-actions">
-              <button class="ghost-button compact" id="btn-prev-page" type="button">Anterior</button>
-              <button class="ghost-button compact" id="btn-next-page" type="button">Siguiente</button>
-            </div>
+            <button class="button button-quiet" id="btn-export" type="button">Exportar página CSV</button>
           </div>
+
+          <form class="filter-grid observations-filters" id="observations-filter-form">
+            <label class="field field-wide">
+              <span>Buscar</span>
+              <input id="search-input" type="search" placeholder="ID, operador, H3, IP o señal">
+            </label>
+            <label class="field">
+              <span>Operador</span>
+              <input id="operator-input" type="search" placeholder="Claro, Movistar...">
+            </label>
+            <label class="field">
+              <span>Desde</span>
+              <input id="from-input" type="date">
+            </label>
+            <label class="field">
+              <span>Hasta</span>
+              <input id="to-input" type="date">
+            </label>
+            <label class="field field-small">
+              <span>Filas</span>
+              <select id="limit-select">
+                <option value="25">25</option>
+                <option value="50" selected>50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>
+            </label>
+          </form>
+
           <div class="table-shell">
             <table class="data-table">
               <thead>
@@ -96,11 +117,11 @@
                   <th>ID</th>
                   <th>Observado</th>
                   <th>Operador</th>
+                  <th>Conexión</th>
                   <th>RTT</th>
                   <th>Éxito</th>
-                  <th>Señal</th>
+                  <th>Llamadas</th>
                   <th>Celda</th>
-                  <th>IP</th>
                 </tr>
               </thead>
               <tbody id="observations-tbody">
@@ -108,30 +129,223 @@
               </tbody>
             </table>
           </div>
-          <div class="pagination" id="observations-pagination"></div>
-        </section>
-
-        <section class="panel" id="panel-resources" aria-label="Moderación de recursos">
-          <div class="panel-head">
-            <div>
-              <h2>Recursos humanitarios</h2>
-              <p id="resources-meta">Cargando...</p>
+          <div class="pagination">
+            <span id="observations-pagination">Sin páginas</span>
+            <div class="pager-actions">
+              <button class="button button-quiet" id="btn-prev-page" type="button">Anterior</button>
+              <button class="button button-quiet" id="btn-next-page" type="button">Siguiente</button>
             </div>
           </div>
-          <div class="resource-grid" id="resources-grid">
-            <div class="empty-state">Cargando recursos...</div>
+        </section>
+
+        <section class="panel" id="panel-resources" data-panel="resources" aria-labelledby="resources-title">
+          <div class="panel-heading">
+            <div>
+              <span class="section-index">03 / coordinación</span>
+              <h2 id="resources-title">Recursos y ofrecimientos</h2>
+              <p id="resources-meta">Cargando recursos...</p>
+            </div>
+            <button class="button button-accent" id="btn-new-resource" type="button">Agregar recurso</button>
           </div>
+
+          <div class="queue-strip" aria-label="Resumen de moderación">
+            <div><strong id="queue-pending">0</strong><span>por revisar</span></div>
+            <div><strong id="queue-approved">0</strong><span>publicados</span></div>
+            <div><strong id="queue-city">0</strong><span>alcance ciudad</span></div>
+            <div><strong id="queue-logistics">0</strong><span>logística</span></div>
+          </div>
+
+          <form class="filter-grid resource-filters" id="resources-filter-form">
+            <label class="field field-wide">
+              <span>Buscar recurso</span>
+              <input id="resource-search" type="search" placeholder="Nombre, ciudad, teléfono o dirección">
+            </label>
+            <label class="field">
+              <span>Estado</span>
+              <select id="resource-status-filter">
+                <option value="">Todos</option>
+                <option value="pending">Pendientes</option>
+                <option value="approved">Aprobados</option>
+                <option value="rejected">Rechazados</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Categoría</span>
+              <select id="resource-kind-filter">
+                <option value="">Todas</option>
+                <option value="logistica">Logística</option>
+                <option value="centro_acopio">Centro de acopio</option>
+                <option value="olla_comunitaria">Olla comunitaria</option>
+                <option value="refugio">Refugio</option>
+                <option value="hospital">Salud</option>
+                <option value="agua">Agua</option>
+                <option value="energia">Energía</option>
+                <option value="internet">Internet</option>
+                <option value="via_bloqueada">Vía bloqueada</option>
+                <option value="afectacion_estructural">Afectación estructural</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Alcance</span>
+              <select id="resource-scope-filter">
+                <option value="">Todos</option>
+                <option value="city">Ciudad</option>
+                <option value="point">Punto exacto</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Publicación</span>
+              <select id="resource-intent-filter">
+                <option value="">Todas</option>
+                <option value="offer">Ofrecimientos</option>
+                <option value="request">Solicitudes</option>
+              </select>
+            </label>
+          </form>
+          <div class="resource-list" id="resources-grid"></div>
+        </section>
+
+        <section class="panel editor-panel" id="panel-editor" data-panel="editor" aria-labelledby="editor-title">
+          <div class="panel-heading editor-heading">
+            <div>
+              <span class="section-index">04 / entrada rápida</span>
+              <h2 id="editor-title">Agregar información</h2>
+              <p id="editor-subtitle">Publica un recurso puntual o una oferta que cubre toda una ciudad.</p>
+            </div>
+            <button class="button button-quiet" id="btn-cancel-edit" type="button" hidden>Cancelar edición</button>
+          </div>
+
+          <div class="template-row">
+            <span>Inicio rápido</span>
+            <button class="template-button" id="template-city-logistics" type="button">
+              <b>Oferta logística</b>
+              <small>Disponible en toda una ciudad</small>
+            </button>
+            <button class="template-button" id="template-point-help" type="button">
+              <b>Punto de ayuda</b>
+              <small>Ubicación exacta en el mapa</small>
+            </button>
+          </div>
+
+          <form id="resource-form" class="resource-form">
+            <input id="resource-id" type="hidden">
+            <fieldset>
+              <legend>Qué se publica</legend>
+              <div class="form-grid">
+                <label class="field">
+                  <span>Tipo de publicación</span>
+                  <select id="resource-intent" required>
+                    <option value="offer">Ofrecimiento</option>
+                    <option value="request">Solicitud / necesidad</option>
+                  </select>
+                </label>
+                <label class="field">
+                  <span>Categoría</span>
+                  <select id="resource-kind" required>
+                    <option value="logistica">Logística / transporte</option>
+                    <option value="centro_acopio">Centro de acopio</option>
+                    <option value="olla_comunitaria">Olla comunitaria</option>
+                    <option value="hospital">Salud / hospital</option>
+                    <option value="refugio">Refugio / albergue</option>
+                    <option value="agua">Agua</option>
+                    <option value="energia">Energía</option>
+                    <option value="internet">Internet</option>
+                    <option value="via_bloqueada">Vía bloqueada</option>
+                    <option value="afectacion_estructural">Afectación estructural</option>
+                  </select>
+                </label>
+                <label class="field field-wide">
+                  <span>Nombre o título</span>
+                  <input id="resource-name" type="text" maxlength="160" placeholder="Ej. Transporte de insumos en Pereira" required>
+                </label>
+                <label class="field">
+                  <span>Teléfono o contacto</span>
+                  <input id="resource-phone" type="tel" maxlength="60" placeholder="300 123 4567">
+                </label>
+                <label class="field">
+                  <span>Estado inicial</span>
+                  <select id="resource-status" required>
+                    <option value="approved">Publicar aprobado</option>
+                    <option value="pending">Dejar pendiente</option>
+                    <option value="rejected">Marcar rechazado</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>Dónde aplica</legend>
+              <div class="scope-selector" role="radiogroup" aria-label="Alcance geográfico">
+                <label><input type="radio" name="resource-scope" value="city" checked><span><b>Toda una ciudad</b><small>Sin punto fijo</small></span></label>
+                <label><input type="radio" name="resource-scope" value="point"><span><b>Punto exacto</b><small>Con coordenadas</small></span></label>
+              </div>
+              <div class="form-grid" id="city-fields">
+                <label class="field">
+                  <span>Municipio o ciudad</span>
+                  <input id="resource-municipality" type="text" maxlength="120" placeholder="Ej. Pereira">
+                </label>
+                <label class="field">
+                  <span>Departamento</span>
+                  <input id="resource-department" type="text" maxlength="120" placeholder="Ej. Risaralda">
+                </label>
+              </div>
+              <div class="form-grid" id="point-fields" hidden>
+                <label class="field">
+                  <span>Latitud</span>
+                  <input id="resource-lat" type="number" step="any" placeholder="4.8143">
+                </label>
+                <label class="field">
+                  <span>Longitud</span>
+                  <input id="resource-lon" type="number" step="any" placeholder="-75.6946">
+                </label>
+              </div>
+              <label class="field field-block">
+                <span>Dirección, barrios o zona cubierta</span>
+                <input id="resource-address" type="text" maxlength="240" placeholder="Ej. Pereira y Dosquebradas, coordinación por teléfono">
+              </label>
+            </fieldset>
+
+            <fieldset>
+              <legend>Información útil</legend>
+              <div class="form-grid">
+                <label class="field field-wide">
+                  <span>Descripción</span>
+                  <textarea id="resource-description" rows="4" placeholder="Qué ofrece o necesita, capacidad, restricciones y cómo coordinar."></textarea>
+                </label>
+                <label class="field">
+                  <span>Disponibilidad</span>
+                  <input id="resource-availability" type="text" placeholder="Ej. Hoy, 8:00 a 18:00">
+                </label>
+                <label class="field">
+                  <span>Urgencia</span>
+                  <select id="resource-urgency">
+                    <option value="normal">Normal</option>
+                    <option value="urgente">Urgente</option>
+                  </select>
+                </label>
+                <label class="field field-wide">
+                  <span>Etiquetas o necesidades, separadas por comas</span>
+                  <input id="resource-needs" type="text" placeholder="Camión, combustible, conductor, alimentos">
+                </label>
+              </div>
+            </fieldset>
+
+            <div class="form-footer">
+              <p id="resource-form-help">Los recursos aprobados aparecen de inmediato en el mapa público.</p>
+              <button class="button button-accent button-large" id="btn-save-resource" type="submit">Publicar recurso</button>
+            </div>
+          </form>
         </section>
       </div>
 
-      <aside class="inspector" aria-label="Detalle seleccionado">
+      <aside class="inspector" id="inspector" aria-label="Detalle seleccionado">
         <div class="inspector-card">
           <div class="inspector-head">
-            <span class="inspector-kicker">Detalle</span>
+            <span class="section-index">detalle</span>
             <span id="inspector-kind" class="inspector-chip">ninguno</span>
           </div>
           <div id="inspector-empty" class="inspector-empty">
-            Selecciona una observación o un recurso para ver el detalle completo.
+            Selecciona una fila o un recurso para revisar todos sus datos y actuar sin salir de esta pantalla.
           </div>
           <div id="inspector-content" hidden></div>
         </div>
@@ -139,26 +353,8 @@
     </section>
   </main>
 
-  <section id="auth-gate" class="auth-gate">
-    <div class="auth-card">
-      <span class="eyebrow">Acceso restringido</span>
-      <h2>Desbloquear panel admin</h2>
-      <p>
-        Ingresa el valor del header <code>X-Admin-Key</code>. El servidor lo valida y
-        crea una sesión HttpOnly corta para este navegador.
-      </p>
-      <form id="admin-login-form" class="auth-form">
-        <label>
-          Admin key
-          <input id="admin-key" type="password" autocomplete="current-password" placeholder="••••••••" required>
-        </label>
-        <button type="submit" class="primary-button">Entrar</button>
-      </form>
-      <div id="auth-error" class="auth-error" role="status" aria-live="polite"></div>
-    </div>
-  </section>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </div>
-
 <script src="/admin.js" defer></script>
 </body>
 </html>
