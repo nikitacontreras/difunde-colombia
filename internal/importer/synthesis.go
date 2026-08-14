@@ -15,6 +15,19 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// isDigits reporta si s es un código numérico (evita basura tipo "nan").
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // ImportSynthesis carga los CSVs generados por synthesize_coverage.py
 // (coverage_municipality.csv, coverage_cells.csv) junto al manifest y
 // reemplaza por completo las tablas de síntesis de cobertura.
@@ -132,7 +145,7 @@ func importSynthesisMunicipal(ctx context.Context, pool *pgxpool.Pool, path stri
 			return 0, fmt.Errorf("leer %s: %w", path, err)
 		}
 		dane := strings.TrimSpace(colAt(rec, idx, "dane_code"))
-		if dane == "" {
+		if dane == "" || !isDigits(dane) {
 			continue
 		}
 		if _, ok := parseFloatLenient(colAt(rec, idx, "covered_ratio")); !ok {

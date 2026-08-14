@@ -76,8 +76,7 @@ def norm_name(s):
     s = unicodedata.normalize("NFD", str(s))
     s = "".join(c for c in s if unicodedata.category(c) != "Mn")
     s = s.upper()
-    s = s.replace("D.C.", "").replace("DC", "").replace("BOGOTA", "BOGOTA")
-    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"[^A-Z0-9]+", " ", s).strip()
     for w in ("CIUDAD DE ", "MUNICIPIO DE ", "EL ", "LA ", "LOS ", "LAS ", "SAN ", "SANTA ", "SANTIAGO DE "):
         pass
     return s
@@ -381,8 +380,10 @@ def load_municipalities(limits_path, official_csv):
     g["dane_code"] = g["name"].map(lambda n: (codes.get(norm_name(n), (None, None, None)))[0])
     g["department"] = g["name"].map(lambda n: (codes.get(norm_name(n), (None, None, None)))[1])
     g["canonical"] = g["name"].map(lambda n: (codes.get(norm_name(n), (None, None, n)))[2])
+    g = g[g["dane_code"].notna() & (g["dane_code"] != "")]
+    g["dane_code"] = g["dane_code"].astype(str)
     g["area_km2"] = g.geometry.to_crs("EPSG:3857").area / 1e6
-    log.info("municipios: %d poligonos, %d con dane_code", len(g), g["dane_code"].notna().sum())
+    log.info("municipios: %d poligonos con dane_code", len(g))
     return g
 
 
