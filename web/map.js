@@ -988,6 +988,8 @@ function apiFetch(input, init) {
       document.getElementById("map-pick-indicator").style.display = "none";
       pickedLatLng = e.latlng;
       document.getElementById("add-point-modal").classList.add("open");
+    } else {
+      queryCoverageAt(e.latlng);
     }
   });
 
@@ -995,6 +997,153 @@ function apiFetch(input, init) {
     document.getElementById("add-point-modal").classList.remove("open");
     pickedLatLng = null;
   });
+  // ---- Cobertura por datos (municipio + punto) ----
+  var municipios = null;
+  var synthesisAbort = null;
+
+  function loadMunicipios() {
+    if (municipios) return;
+    fetch("/cobertura_municipios.geojson")
+      .then(function (r) { return r.json(); })
+      .then(function (data) { municipios = data; })
+      .catch(function () {});
+  }
+
+  function pointInRing(pt, ring) {
+    var inside = false;
+    for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      var xi = ring[i][0], yi = ring[i][1];
+      var xj = ring[j][0], yj = ring[j][1];
+      var intersect = ((yi > pt[1]) !== (yj > pt[1])) &&
+        (pt[0] < (xj - xi) * (pt[1] - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  function pointInGeometry(pt, geom) {
+    if (!geom || !geom.coordinates) return false;
+    if (geom.type === "Polygon") {
+      if (!pointInRing(pt, geom.coordinates[0])) return false;
+      for (var k = 1; k < geom.coordinates.length; k++) {
+        if (pointInRing(pt, geom.coordinates[k])) return false;
+      }
+      return true;
+    }
+    if (geom.type === "MultiPolygon") {
+      for (var p = 0; p < geom.coordinates.length; p++) {
+        var poly = geom.coordinates[p];
+        if (!pointInRing(pt, poly[0])) continue;
+        var hole = false;
+        for (var h = 1; h < poly.length; h++) {
+          if (pointInRing(pt, poly[h])) { hole = true; break; }
+        }
+        if (!hole) return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  function findMunicipality(latlng) {
+    if (!municipios || !municipios.features) return null;
+    var pt = [latlng.lng, latlng.lat];
+    for (var i = 0; i < municipios.features.length; i++) {
+      var f = municipios.features[i];
+      if (pointInGeometry(pt, f.geometry)) return f.properties;
+    }
+    return null;
+  }
+
+  function opName(op) {
+    var names = { claro: "Claro", movistar: "Movistar", tigo: "Tigo", wom: "WOM" };
+    return names[String(op || "").toLowerCase()] || op || "";
+  }
+
+  function pct(v) {
+    var n = Number(v);
+    if (!isFinite(n)) return "n/d";
+    return Math.round(n * 100) + "%";
+  }
+
+  function operatorBars(op, items) {
+    var label = opName(op);
+    if (!items || !items.length) {
+      return "<div style='display:flex; align-items:center; gap:8px;'><span style='width:64px; font-size:11px; color:var(--text-secondary);'>" + label + "</span><span style='font-size:11px; color:#8a94a6;'>sin datos</span></div>";
+    }
+    var bars = items.map(function (r) {
+      var v = Math.max(0, Math.min(1, Number(r.covered_ratio) || 0));
+      var color = v > 0.6 ? "#2ecc71" : v > 0.3 ? "#f1c40f" : "#e74c3c";
+      return "<div style='display:flex; align-items:center; gap:6px;'>" +
+        "<span style='width:26px; font-size:10px; color:var(--text-secondary); text-align:right;'>" + r.technology + "</span>" +
+        "<span style='flex:1; height:7px; background:rgba(255,255,255,0.12); border-radius:4px; overflow:hidden;'>" +
+        "<span style='display:block; height:100%; width:" + Math.round(v * 100) + "%; background:" + color + "; border-radius:4px;'></span></span>" +
+        "<span style='width:38px; font-size:10px; color:var(--text-primary); text-align:right;'>" + pct(r.covered_ratio) + "</span></div>";
+    }).join("");
+    return "<div style='display:flex; flex-direction:column; gap:3px;'><div style='font-size:11px; font-weight:700; color:var(--text-primary);'>" + label + "</div>" + bars + "</div>";
+  }
+
+  function renderSynthesis(props, rows, point) {
+    var panel = document.getElementById("synthesis-panel");
+    var nameEl = document.getElementById("synthesis-municipio");
+    var listEl = document.getElementById("synthesis-list");
+    var pointEl = document.getElementById("synthesis-point");
+    if (!panel) return;
+    nameEl.textContent = (props.municipio || "Sin municipio") +
+      (props.departamento && props.departamento !== props.municipio ? " · " + props.departamento : "");
+    var groups = {};
+    (rows || []).forEach(function (r) {
+      var key = String(r.operator || "").toLowerCase();
+      (groups[key] = groups[key] || []).push(r);
+    });
+    var html = "";
+    ["claro", "movistar", "tigo", "wom"].forEach(function (op) {
+      html += operatorBars(op, groups[op]);
+    });
+    Object.keys(groups).forEach(function (op) {
+      if (["claro", "movistar", "tigo", "wom"].indexOf(op) === -1) html += operatorBars(op, groups[op]);
+    });
+    listEl.innerHTML = html || "<div style='font-size:11px; color:var(--text-secondary);'>Sin datos de cobertura para este municipio.</div>";
+
+    var plist = Array.isArray(point) ? point : [];
+    if (plist.length) {
+      pointEl.innerHTML = "En este punto: <strong style='color:var(--text-primary);'>" +
+        plist.map(function (p) { return opName(p.operator) + " " + (p.technology || ""); }).join(" · ") + "</strong>";
+      pointEl.style.display = "block";
+    } else {
+      pointEl.textContent = "Sin cobertura de operadores en este punto.";
+      pointEl.style.display = "block";
+    }
+    panel.style.display = "block";
+  }
+
+  function queryCoverageAt(latlng) {
+    if (synthesisAbort) synthesisAbort.abort();
+    synthesisAbort = new AbortController();
+    var signal = synthesisAbort.signal;
+    fetch("/coverage/point?lat=" + latlng.lat.toFixed(5) + "&lon=" + latlng.lng.toFixed(5), { signal: signal })
+      .then(function (r) { return r.json(); })
+      .then(function (point) {
+        var props = findMunicipality(latlng);
+        if (props) {
+          return fetch("/coverage/synthesis?dane=" + encodeURIComponent(props.dane), { signal: signal })
+            .then(function (r2) { return r2.json(); })
+            .then(function (rows) {
+              renderSynthesis(props, rows, point);
+              document.getElementById("connectivity-drawer").classList.add("open");
+            });
+        }
+        renderSynthesis({ municipio: "Fuera de municipios", departamento: "" }, [], point);
+        document.getElementById("connectivity-drawer").classList.add("open");
+      })
+      .catch(function () {});
+  }
+
+  document.getElementById("btn-close-synthesis").addEventListener("click", function () {
+    document.getElementById("synthesis-panel").style.display = "none";
+  });
+
+  loadMunicipios();
 
   // Proof of work helper (native anti-spam)
   async function solvePoW(kind, name) {

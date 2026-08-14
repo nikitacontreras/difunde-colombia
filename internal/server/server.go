@@ -111,6 +111,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /app.css", s.handleAsset("app.css"))
 	s.mux.HandleFunc("GET /sw.js", s.handleAsset("sw.js"))
 	s.mux.HandleFunc("GET /manifest.webmanifest", s.handleAsset("manifest.webmanifest"))
+	s.mux.HandleFunc("GET /cobertura_municipios.geojson", s.handleAsset("cobertura_municipios.geojson"))
 	s.mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
 	s.mux.HandleFunc("GET /p", s.handleP)

@@ -1118,6 +1118,20 @@ html, body {
           <div id="coverage-warning" style="font-size:11px; color:#fbbf24; line-height:1.45; display:none;"></div>
         </div>
 
+        <!-- Synthesis Coverage Card (datos por municipio/punto) -->
+        <div class="drawer-section-card" id="synthesis-panel" style="gap:12px; display:none;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+            <div>
+              <div style="font-size:12px; font-weight:700; color:var(--text-primary); letter-spacing:0.3px;">Cobertura por datos</div>
+              <div id="synthesis-municipio" style="font-size:11px; color:var(--text-secondary); line-height:1.4; margin-top:2px;"></div>
+            </div>
+            <button id="btn-close-synthesis" style="background:none; border:none; color:#8a94a6; font-size:18px; cursor:pointer; line-height:1; padding:0;" aria-label="Cerrar" title="Cerrar">×</button>
+          </div>
+          <div id="synthesis-list" style="display:flex; flex-direction:column; gap:9px;"></div>
+          <div id="synthesis-point" style="font-size:11px; color:var(--text-secondary); border-top:1px solid rgba(255,255,255,0.1); padding-top:8px; line-height:1.5;"></div>
+          <div style="font-size:10px; color:var(--text-secondary); opacity:0.75;">Haz click en el mapa en otro municipio para consultar su cobertura.</div>
+        </div>
+
         <!-- Legend Card -->
         <div class="drawer-section-card" style="gap:10px;">
           <div class="legend-item">
